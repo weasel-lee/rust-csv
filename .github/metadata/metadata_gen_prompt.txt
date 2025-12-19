@@ -14,9 +14,31 @@ Think of this as caching the *hard parts* of understanding so that future LLM ca
 
 Input format:
 
-```
+The runtime will provide a single text input that contains labeled sections, exactly like:
+
+=== TARGET ===
+<path/to/file.rs>
+
+=== RUST SOURCE (<path/to/file.rs>) ===
 <Rust source code for this file>
-```
+
+=== EXISTING METADATA (<path/to/file.metadata.txt>) ===
+<Existing *.metadata.txt contents for this file>
+(or the literal placeholder "<none>" if there is no existing metadata)
+
+=== OUTPUT INSTRUCTIONS ===
+Write the new/updated metadata text only.
+
+How to interpret inputs:
+- If the EXISTING METADATA section is "<none>", you are in CREATE mode: generate metadata from the Rust source (and any structure implied by the path/module role).
+- If the EXISTING METADATA section contains prior metadata, you are in UPDATE mode: treat it as the previous canonical metadata and produce an UPDATED replacement based on the current Rust source.
+
+Important UPDATE-mode rules:
+- Preserve bullets that are still correct and still “expensive” (orthogonal) knowledge.
+- Remove bullets that are now stale/incorrect given the current Rust source.
+- Add new bullets for newly introduced semantics, invariants, edge cases, concurrency contracts, error behavior, boundaries, or risks that were not captured before.
+- Do NOT output a diff. Output the full refreshed metadata block in the exact required structure below.
+- If the existing metadata contains non-semantic housekeeping lines (e.g., hash headers such as "# source_sha256: ..."), ignore them and do not include them in the final output.
 
 Your output must be EXACTLY this structure:
 
@@ -87,4 +109,4 @@ Additional instructions:
 - Favor dense bullet points over paragraphs.
 - Prefer information that would be expensive for another LLM to re-derive from scratch by reading the code.
 - If something is inferred rather than explicit, phrase it as “likely”, “appears to”, or “potential”.
-- Put the response in code snippet so that I can copy/paste without losing markdown format.
+- Put the response in a fenced code block (triple backticks) so that I can copy/paste without losing markdown format.
