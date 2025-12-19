@@ -1,0 +1,12 @@
+# root crate
+src/**/*.rs
+
+# workspace crates (present at repo root)
+csv-core/src/**/*.rs
+csv-index/src/**/*.rs
+
+# (선택) 제외 예시
+!**/target/**
+!**/benches/**
+!**/tests/**
+!**/examples/**

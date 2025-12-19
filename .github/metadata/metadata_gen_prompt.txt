@@ -1,0 +1,90 @@
+You are helping build an LLM-friendly codebase. Your job is to read Rust source code plus some structural metadata and produce a compact, *orthogonal* semantic metadata block.
+
+Orthogonal here means:
+- Do NOT restate trivial details that are obvious from the code or structural metadata (e.g., function lists, field names, basic control flow).
+- Focus on “expensive” understanding: invariants, assumptions, tricky behavior, edge cases, concurrency contracts, error propagation, architectural boundaries, and extension points.
+
+This metadata is optimized for future LLM queries about:
+- code review,
+- architectural review,
+- adding new features safely based on the existing semantics
+  (including correctness questions, potential bugfixes, and design advice).
+
+Think of this as caching the *hard parts* of understanding so that future LLM calls don’t have to rediscover them from scratch.
+
+Input format:
+
+```
+<Rust source code for this file>
+```
+
+Your output must be EXACTLY this structure:
+
+[FILE METADATA]
+high_level_purpose:
+- <1–3 bullets that describe why this module exists and what role it plays in the larger system. Focus on behavior and responsibilities, not syntax.>
+
+core_domain_concepts:
+- <concept name>: <what it represents / how this file treats it>
+- <concept name>: <...>
+  (e.g. “event type”, “node”, “exchange client”, “rolling trade window”, etc.; skip obvious type aliases and tiny helpers.)
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: <condition that should always hold at runtime, given correct use>
+- Invariant: <...>
+- Assumption: <implicit assumption about inputs, environment, call order, external services, or data shapes>
+- Assumption: <...>
+  (Focus on timing, ordering, state relationships, and invariants that, if broken, would cause incorrect behavior or regressions when changing or extending the code.)
+
+lifecycle_and_main_flows:
+- <name>: <short description of the main flows (e.g. startup → steady state → shutdown, watch loop, catch-up path, subscription lifecycle). Emphasize phases, transitions, and where state changes.>
+- <name>: <...>
+
+edge_cases_and_tricky_behavior:
+- <describe behaviors that are non-obvious or surprising: special cases, resets, ignored inputs, silent fallbacks, unusual defaulting, test-mode behavior, etc.>
+- <include any conditions where behavior diverges significantly from the “normal” path.>
+- <...>
+
+concurrency_and_ordering_contracts:
+- <describe how tasks, locks, channels, and CancellationTokens are used; what data is shared; what is serialized vs parallel.>
+- <state any ordering guarantees between operations/streams that callers must rely on (or must NOT rely on).>
+- <note any potential races, deadlock risks, or subtle concurrency issues.>
+- If there is no meaningful concurrency, say: “None; logic is effectively single-threaded and synchronous.”
+
+error_propagation_and_recovery:
+- <describe how errors are detected, wrapped, and surfaced (Result/Status/etc).>
+- <explain which errors are retried vs fail-fast, and where logging vs propagation happens.>
+- <mention any partial-failure behavior (e.g., some operations succeed while others are logged and skipped).>
+- <call out any cases where errors are silently ignored or only logged, as these matter for correctness and debugging.>
+
+design_and_responsibility_boundaries:
+- <describe how responsibilities are split within the module (client vs monitor, handler vs state, config vs runtime, etc.).>
+- <note any places where responsibilities are mixed in a way that could complicate reasoning, testing, or changes (tight coupling, shared mutable state, hidden global assumptions, etc.).>
+- <highlight key extension points (traits, callbacks, configuration knobs, type parameters) that are intended for new features.>
+
+likely_bug_hotspots_and_risks:
+- Risk: <area where bugs are likely (complex conditionals, subtle invariants, tricky time/ordering logic, error-handling gaps). Explain why.>
+- Risk: <...>
+- Risk: <...>
+  (These are not guaranteed bugs, but areas that deserve extra attention in code review, when modifying logic, or while adding features. Phrase carefully: “Risk: …” or “Potential pitfall: …”.)
+
+refactoring_and_extension_notes:
+- <describe aspects of the design that make future changes or new features easier or harder: strong coupling, global state, shared locks, assumptions that would need to be broken, etc.>
+- <note natural seams where the module could be split, where responsibilities could be extracted, or where a new feature would most cleanly hook in.>
+- <mention any “do not break” contracts that refactors or new features must respect.>
+
+usage_guidance_for_future_llms:
+- For code review, focus on: <X> (e.g., specific invariants, edge cases, concurrency contracts, and identified risk areas).
+- For architectural review, consider: <Y> (e.g., boundaries that are currently blurred, places where responsibilities could be separated, or where abstractions leak).
+- For adding new features, pay particular attention to: <Z> (e.g., invariants that must remain true, extension points that are safe to use, and areas flagged as high-risk for regressions).
+- When summarizing for a human, always mention: <the core responsibilities and one or two key invariants/assumptions that define the module’s behavior.>
+[END FILE METADATA]
+
+Additional instructions:
+- DO NOT include any raw code or large signature dumps in your output.
+- DO NOT enumerate every function or field; only mention specific names when they are important to invariants, concurrency, extension points, or design boundaries.
+- DO NOT propose specific refactor implementations, concrete feature designs, or bug fixes here; just describe where the design is rigid, fragile, complex, or amenable to extension.
+- Favor dense bullet points over paragraphs.
+- Prefer information that would be expensive for another LLM to re-derive from scratch by reading the code.
+- If something is inferred rather than explicit, phrase it as “likely”, “appears to”, or “potential”.
+- Put the response in code snippet so that I can copy/paste without losing markdown format.
