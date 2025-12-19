@@ -1,5 +1,5 @@
 # include glob patterns (repo root 기준)
-src/**/*.rs
+src/*.rs
 crates/**/src/*.rs
 
 # exclude patterns: ! 로 시작
