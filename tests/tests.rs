@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+// Integration tests that exercise the public examples from the tutorial and
+// cookbook to ensure their output stays stable over time.
+
 use csv::Reader;
 
 use std::env;
