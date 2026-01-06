@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+// Integration tests that exercise the public examples from the tutorial and
+// cookbook to ensure their output stays stable over time.
+
 use csv::Reader;
 
 use std::env;
@@ -19,6 +22,15 @@ static SMALLPOP_COLON: &str =
     include_str!("../examples/data/smallpop-colon.csv");
 static SMALLPOP_NO_HEADERS: &str =
     include_str!("../examples/data/smallpop-no-headers.csv");
+static WRITE_SAMPLE_OUTPUT: &str = concat!(
+    "city,region,country,population\n",
+    "Southborough,MA,United States,9686\n",
+    "Northbridge,MA,United States,14061\n",
+);
+static PIPELINE_SEARCH_OUTPUT: &str = concat!(
+    "City,State,Population,Latitude,Longitude\n",
+    "Reading,MA,23441,42.5255556,-71.0958333\n",
+);
 
 #[test]
 fn cookbook_read_basic() {
@@ -52,14 +64,14 @@ fn cookbook_read_no_headers() {
 fn cookbook_write_basic() {
     let mut cmd = cmd_for_example("cookbook-write-basic");
     let out = cmd_output(&mut cmd);
-    assert_eq!(out.stdout().lines().count(), 3);
+    assert_eq!(out.stdout(), WRITE_SAMPLE_OUTPUT);
 }
 
 #[test]
 fn cookbook_write_serde() {
     let mut cmd = cmd_for_example("cookbook-write-serde");
     let out = cmd_output(&mut cmd);
-    assert_eq!(out.stdout().lines().count(), 3);
+    assert_eq!(out.stdout(), WRITE_SAMPLE_OUTPUT);
 }
 
 #[test]
@@ -165,7 +177,22 @@ fn tutorial_read_headers_01() {
 fn tutorial_read_headers_02() {
     let mut cmd = cmd_for_example("tutorial-read-headers-02");
     let out = cmd_output_with(&mut cmd, USPOP.as_bytes());
-    assert_eq!(out.stdout().lines().count(), 102);
+    let mut lines = out.stdout().lines();
+    assert_eq!(
+        lines.next(),
+        Some("StringRecord([\"City\", \"State\", \"Population\", \"Latitude\", \"Longitude\"])"),
+    );
+    assert_eq!(
+        lines.next(),
+        Some(
+            "StringRecord([\"Davidsons Landing\", \"AK\", \"\", \"65.2419444\", \"-165.2716667\"])",
+        ),
+    );
+    assert_eq!(lines.clone().count(), 100);
+    assert_eq!(
+        lines.last(),
+        Some("StringRecord([\"City\", \"State\", \"Population\", \"Latitude\", \"Longitude\"])"),
+    );
 }
 
 #[test]
@@ -264,7 +291,7 @@ fn tutorial_pipeline_search_01() {
     let mut cmd = cmd_for_example("tutorial-pipeline-search-01");
     cmd.arg("MA");
     let out = cmd_output_with(&mut cmd, USPOP.as_bytes());
-    assert_eq!(out.stdout().lines().count(), 2);
+    assert_eq!(out.stdout(), PIPELINE_SEARCH_OUTPUT);
 }
 
 #[test]
@@ -280,7 +307,7 @@ fn tutorial_pipeline_search_02() {
     let mut cmd = cmd_for_example("tutorial-pipeline-search-02");
     cmd.arg("MA");
     let out = cmd_output_with(&mut cmd, USPOP_LATIN1);
-    assert_eq!(out.stdout().lines().count(), 2);
+    assert_eq!(out.stdout(), PIPELINE_SEARCH_OUTPUT);
 }
 
 #[test]
