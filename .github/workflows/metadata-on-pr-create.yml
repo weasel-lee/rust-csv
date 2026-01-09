@@ -118,9 +118,9 @@ jobs:
             Please update Rust metadata files for this PR.
 
             Rules:
-            - Allowlist: use glob patterns from `.github/metadata/allowlist.txt` (supports !exclude lines).
-            - Output path mapping: `/path/to/src/a.rs` -> `/path/to/src/a.metadata.txt`
-            - Prompt: follow `.github/metadata/prompt.txt` exactly for output structure and style.
+            - Allowlist: use glob patterns from \`.github/metadata/allowlist.txt\` (supports !exclude lines).
+            - Output path mapping: \`/path/to/src/a.rs\` -> \`/path/to/src/a.metadata.txt\`
+            - Prompt: follow \`.github/metadata/prompt.txt\` exactly for output structure and style.
             - Added Rust file: generate metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
             - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
