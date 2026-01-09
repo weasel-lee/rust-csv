@@ -115,7 +115,7 @@ jobs:
 
             ${marker}
 
-            Please update Rust metadata files for this PR.
+            Please update Rust metadata files for this PR. Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
 
             Rules:
             - Allowlist: use glob patterns from \`.github/metadata/allowlist.txt\` (supports !exclude lines).

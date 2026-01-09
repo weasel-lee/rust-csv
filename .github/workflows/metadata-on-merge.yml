@@ -132,7 +132,7 @@ jobs:
 
             ${marker}
 
-            Please update Rust metadata files in this PR (post-merge fixup).
+            Please update Rust metadata files in this PR (post-merge fixup). Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
 
             Rules:
             - Allowlist: \`.github/metadata/allowlist.txt\` (supports !exclude).
