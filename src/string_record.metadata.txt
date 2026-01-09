@@ -1,0 +1,52 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Provide a UTF-8–validated CSV record type with ergonomic string access built on top of the raw `ByteRecord` storage.
+- Offer conversion paths from raw bytes (lossless and lossy) while preserving efficient in-place field operations.
+
+core_domain_concepts:
+- StringRecord: wrapper over `ByteRecord` that guarantees (by construction) UTF-8-valid field data.
+- FromUtf8Error: error type that couples the original `ByteRecord` with UTF-8 validation details for diagnostics.
+- UTF-8 boundary–aware field ranges: field slices are required to start/end on UTF-8 boundaries so `&str` views are safe.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: all field bytes in the underlying `ByteRecord` are valid UTF-8 for any `StringRecord` constructed via the public APIs.
+- Invariant: field boundary indices align to UTF-8 sequence boundaries; methods that return ranges depend on this to avoid invalid `&str` slices.
+- Assumption: internal uses of `str::from_utf8_unchecked` are safe because the above invariants hold; breaking them is undefined behavior.
+
+lifecycle_and_main_flows:
+- Lossless conversion: `from_byte_record` validates UTF-8 and returns `StringRecord` or a `FromUtf8Error` with details.
+- Lossy conversion: `from_byte_record_lossy` replaces invalid sequences with U+FFFD and rebuilds fields as owned strings.
+- In-place normalization: `trim` and `retain` delegate to underlying byte buffers, compacting data while preserving UTF-8 boundaries.
+
+edge_cases_and_tricky_behavior:
+- `from_byte_record_lossy` bypasses validation fast-path when the data is valid ASCII/UTF-8, otherwise it rebuilds each field and may allocate.
+- `trim` uses Unicode whitespace, which can remove non-ASCII code points; the implementation rewrites the byte buffer in-place.
+- `retain` and `trim` are no-ops for empty records but will invalidate any previously borrowed field slices once they mutate the buffer.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- UTF-8 validation errors surface via `FromUtf8Error`, which preserves the original `ByteRecord` for recovery or inspection.
+- Deserialization propagates errors from the underlying byte-level deserializer without local retry logic.
+
+design_and_responsibility_boundaries:
+- UTF-8 guarantees and string-facing APIs live here; raw byte storage, bounds management, and position tracking remain in `ByteRecord`.
+- Extension points include predicate-based `retain` and the conversion APIs that callers can use to enforce or relax UTF-8 correctness.
+
+likely_bug_hotspots_and_risks:
+- Risk: any new method that mutates the underlying bytes must preserve UTF-8 validity and boundary alignment to keep `unsafe` conversions sound.
+- Risk: lossy conversion rebuilds fields; subtle bugs could arise if it mishandles empty fields or capacity assumptions.
+
+refactoring_and_extension_notes:
+- The wrapper model depends on `ByteRecord` invariants; refactors should avoid introducing direct byte mutations that bypass validation.
+- New features should prefer working through existing byte-level helpers to keep in-place compaction consistent with boundary guarantees.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: UTF-8 validity assumptions, unsafe conversions, and in-place buffer rewrites in `trim`/`retain`.
+- For architectural review, consider: whether UTF-8 enforcement and lossy conversion paths remain clearly separated from raw byte storage.
+- For adding new features, pay particular attention to: preserving UTF-8 boundaries during mutations and choosing the correct conversion path.
+- When summarizing for a human, always mention: that `StringRecord` is a UTF-8–validated wrapper over `ByteRecord` and relies on that invariant for safety.
+[END FILE METADATA]
+```

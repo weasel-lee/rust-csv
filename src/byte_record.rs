@@ -369,14 +369,60 @@ impl ByteRecord {
         if length == 0 {
             return;
         }
-        // TODO: We could likely do this in place, but for now, we allocate.
-        let mut trimmed =
-            ByteRecord::with_capacity(self.as_slice().len(), self.len());
-        trimmed.set_position(self.position().cloned());
-        for field in self.iter() {
-            trimmed.push_field(trim_ascii(field));
+        let mut write = 0;
+        let mut prev_end = 0;
+        for i in 0..length {
+            let end = self.0.bounds.ends[i];
+            let start = prev_end;
+            prev_end = end;
+            let (trim_start, trim_end) =
+                trim_ascii_range(&self.0.fields[start..end]);
+            let trimmed_start = start + trim_start;
+            let trimmed_end = start + trim_end;
+            self.0.fields.copy_within(trimmed_start..trimmed_end, write);
+            write += trimmed_end - trimmed_start;
+            self.0.bounds.ends[i] = write;
         }
-        *self = trimmed;
+    }
+
+    /// Retain only the fields specified by the predicate.
+    ///
+    /// The predicate is applied in field order, and only fields for which the
+    /// predicate returns true are kept.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use csv::ByteRecord;
+    ///
+    /// let mut record = ByteRecord::from(vec!["a", "", "b", ""]);
+    /// record.retain(|field| !field.is_empty());
+    /// assert_eq!(record, vec!["a", "b"]);
+    /// ```
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&[u8]) -> bool,
+    {
+        let length = self.len();
+        if length == 0 {
+            return;
+        }
+        let mut write = 0;
+        let mut prev_end = 0;
+        let mut kept = 0;
+        for i in 0..length {
+            let end = self.0.bounds.ends[i];
+            let start = prev_end;
+            prev_end = end;
+            let field = &self.0.fields[start..end];
+            if keep(field) {
+                self.0.fields.copy_within(start..end, write);
+                write += end - start;
+                self.0.bounds.ends[kept] = write;
+                kept += 1;
+            }
+        }
+        self.0.bounds.len = kept;
     }
 
     /// Add a new field to this record.
@@ -855,8 +901,12 @@ impl<'r> DoubleEndedIterator for ByteRecordIter<'r> {
     }
 }
 
-fn trim_ascii(bytes: &[u8]) -> &[u8] {
-    trim_ascii_start(trim_ascii_end(bytes))
+fn trim_ascii_range(bytes: &[u8]) -> (usize, usize) {
+    let trimmed_start = trim_ascii_start(bytes);
+    let start = bytes.len() - trimmed_start.len();
+    let trimmed = trim_ascii_end(trimmed_start);
+    let end = start + trimmed.len();
+    (start, end)
 }
 
 fn trim_ascii_start(mut bytes: &[u8]) -> &[u8] {
@@ -987,6 +1037,16 @@ mod tests {
         let mut rec = ByteRecord::new();
         rec.trim();
         assert_eq!(rec.as_slice().len(), 0);
+    }
+
+    #[test]
+    fn retain_fields() {
+        let mut rec = ByteRecord::from(vec!["a", "", "b", "", "c"]);
+        rec.retain(|field| !field.is_empty());
+        assert_eq!(rec, vec!["a", "b", "c"]);
+
+        rec.retain(|field| field == b"b");
+        assert_eq!(rec, vec!["b"]);
     }
 
     #[test]

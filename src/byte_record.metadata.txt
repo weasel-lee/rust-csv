@@ -1,0 +1,55 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Provide a raw-bytes CSV record type that can store non-UTF-8 data while still supporting field-level access, mutation, and deserialization.
+- Maintain a compact, contiguous buffer plus index bounds so record operations can be done in-place without per-field allocations.
+
+core_domain_concepts:
+- ByteRecord/ByteRecordInner: contiguous `fields` buffer plus `bounds` describing field endpoints, with optional `Position` metadata.
+- Bounds: per-field end indices plus a separate length counter used to describe the logical field count.
+- Position: byte/line/record offsets used for error reporting and reader bookkeeping.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: `bounds.len` is the authoritative field count; all public accessors/iterators assume it matches the logical number of fields.
+- Invariant: `bounds.ends[0..bounds.len]` is monotonically non-decreasing, and each end is within `fields`, so slices formed by successive ends are valid.
+- Invariant: field boundaries are defined by the previous end (or 0) to the current end; callers that mutate via internal APIs must preserve this layout.
+- Assumption: data may be non-UTF-8; consumers that require UTF-8 must call `validate` or otherwise ensure validity before conversion.
+- Assumption: `Position::set_line` requires `line > 0` and will panic otherwise; callers must uphold that contract.
+
+lifecycle_and_main_flows:
+- Record construction and mutation: create with capacity → push/extend fields into the contiguous buffer → update bounds and reuse/clear/truncate as needed.
+- In-place normalization: `trim` and `retain` walk fields in order, compacting the buffer and rewriting `bounds.ends` while preserving field order.
+- Validation flow: `validate` performs a fast ASCII check, then per-field UTF-8 validation to support safe conversion to `StringRecord`.
+
+edge_cases_and_tricky_behavior:
+- `truncate` and `clear` only adjust `bounds.len`; unused data remains in the buffer and is ignored by iteration.
+- `trim` and `retain` short-circuit on empty records; when they do run, they overwrite the buffer in-place, so any external slices to fields become invalid.
+- Comparison ignores `Position` metadata; equality is defined purely by field bytes.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- UTF-8 validation returns `Utf8Error` with field index and byte offset via `validate`; callers decide whether to propagate or recover.
+- Deserialization delegates to `deserialize_byte_record`, propagating its `Result` without local recovery.
+
+design_and_responsibility_boundaries:
+- This module owns raw record storage, indexing, and position metadata; higher-level UTF-8 guarantees and lossy conversions are delegated to `StringRecord`.
+- Internal mutation hooks (`as_parts`, `set_len`, `expand_fields`, `expand_ends`) are crate-scoped, acting as extension points for reader/writer internals.
+
+likely_bug_hotspots_and_risks:
+- Risk: in-place compaction (`trim`/`retain`) relies on correct `bounds.ends` ordering; any upstream corruption can lead to invalid slicing or data loss.
+- Risk: callers holding slices into `fields` while mutating the record can observe unexpected data because operations rewrite the buffer.
+- Risk: assumptions about UTF-8 validity are not enforced here; misuse can surface as unsafe conversions in other modules.
+
+refactoring_and_extension_notes:
+- The contiguous buffer + bounds model is central; refactors must preserve the invariant that `bounds.len` is authoritative and ends are in-order.
+- New field-wise operations should follow the existing in-place compaction pattern to avoid reallocations and to update bounds consistently.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: bounds/field invariants, in-place compaction correctness, and UTF-8 validation usage.
+- For architectural review, consider: separation between raw-byte storage and UTF-8-specific behavior, and whether internal mutation APIs are sufficiently encapsulated.
+- For adding new features, pay particular attention to: preserving bounds ordering, updating `bounds.len` accurately, and avoiding invalidating UTF-8 assumptions.
+- When summarizing for a human, always mention: the raw-byte CSV record role and the invariant that field boundaries are defined by ordered end indices.
+[END FILE METADATA]
+```
