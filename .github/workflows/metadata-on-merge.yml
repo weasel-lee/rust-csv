@@ -135,9 +135,9 @@ jobs:
             Please update Rust metadata files in this PR (post-merge fixup).
 
             Rules:
-            - Allowlist: `.github/metadata/allowlist.txt` (supports !exclude).
-            - Output path mapping: `/path/to/src/a.rs` -> `/path/to/src/a.metadata.txt`
-            - Prompt: follow `.github/metadata/prompt.txt` exactly.
+            - Allowlist: \`.github/metadata/allowlist.txt\` (supports !exclude).
+            - Output path mapping: \`/path/to/src/a.rs\` -> \`/path/to/src/a.metadata.txt\`
+            - Prompt: follow \`.github/metadata/prompt.txt\` exactly.
             - Added Rust file: create metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
             - Deleted Rust file: delete corresponding .metadata.txt if exists.
