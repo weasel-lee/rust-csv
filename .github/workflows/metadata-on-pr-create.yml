@@ -94,7 +94,7 @@ jobs:
       - name: Post @codex job comment (dedup by marker)
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.WEASEL_LEE_TOKEN }}
+          github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const pr = context.payload.pull_request.number;
             const marker = "METADATA_JOB_REQUEST_V1";
@@ -118,13 +118,12 @@ jobs:
             Please update Rust metadata files for this PR.
 
             Rules:
-            - Allowlist: use glob patterns from .github/metadata/allowlist.txt (supports !exclude lines).
-            - Output path mapping: /path/to/src/a.rs -> /path/to/src/a.metadata.txt
-            - Prompt: follow .github/metadata/prompt.txt exactly for output structure and style.
-            - Size rule: if a Rust file is > 2000 lines, SKIP generating/updating its metadata (do not truncate). Leave existing metadata as-is. Report skipped files in a comment.
-            - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
+            - Allowlist: use glob patterns from `.github/metadata/allowlist.txt` (supports !exclude lines).
+            - Output path mapping: `/path/to/src/a.rs` -> `/path/to/src/a.metadata.txt`
+            - Prompt: follow `.github/metadata/prompt.txt` exactly for output structure and style.
             - Added Rust file: generate metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
+            - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
             - Do not include housekeeping hash headers like "# source_sha256:" in your output; those are handled by tooling.
 
             Targets:
