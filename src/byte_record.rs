@@ -10,6 +10,7 @@ use serde_core::de::Deserialize;
 use crate::{
     deserializer::deserialize_byte_record,
     error::{new_utf8_error, Result, Utf8Error},
+    field_mask::FieldMask,
     string_record::StringRecord,
 };
 
@@ -345,6 +346,45 @@ impl ByteRecord {
     #[inline]
     pub fn clear(&mut self) {
         self.truncate(0);
+    }
+
+    /// Apply a field mask to this record, retaining only selected fields.
+    ///
+    /// The record is compacted in place to contain only the fields selected
+    /// by `mask`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use csv::{ByteRecord, FieldMask};
+    ///
+    /// let mut record = ByteRecord::from(vec!["a", "b", "c"]);
+    /// let mask = FieldMask::from_indices(record.len(), [0, 2]);
+    /// record.apply_mask(&mask);
+    /// assert_eq!(record, vec!["a", "c"]);
+    /// ```
+    pub fn apply_mask(&mut self, mask: &FieldMask) {
+        let mut write_end = 0;
+        let mut write_index = 0;
+        let length = self.len();
+        for index in 0..length {
+            if !mask.keeps(index) {
+                continue;
+            }
+            let end = self.0.bounds.ends[index];
+            let start = if index == 0 {
+                0
+            } else {
+                self.0.bounds.ends[index - 1]
+            };
+            if start != write_end {
+                self.0.fields.copy_within(start..end, write_end);
+            }
+            write_end += end - start;
+            self.0.bounds.ends[write_index] = write_end;
+            write_index += 1;
+        }
+        self.0.bounds.len = write_index;
     }
 
     /// Trim the fields of this record so that leading and trailing whitespace
@@ -883,6 +923,7 @@ fn trim_ascii_end(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
+    use crate::field_mask::FieldMask;
     use crate::string_record::StringRecord;
 
     use super::ByteRecord;
@@ -922,6 +963,43 @@ mod tests {
         assert_eq!(rec.len(), 0);
         assert_eq!(rec.get(0), None);
         assert_eq!(rec.get(1), None);
+    }
+
+    #[test]
+    fn apply_mask_keeps_selected_fields() {
+        let mut rec = ByteRecord::from(vec![b("a"), b("b"), b("c"), b("d")]);
+        let mask = FieldMask::from_indices(rec.len(), [0, 2]);
+        rec.apply_mask(&mask);
+        assert_eq!(rec, vec![b("a"), b("c")]);
+    }
+
+    #[test]
+    fn apply_mask_handles_empty_record() {
+        let mut rec = ByteRecord::new();
+        let mask = FieldMask::from_indices(rec.len(), []);
+        rec.apply_mask(&mask);
+        assert!(rec.is_empty());
+    }
+
+    #[test]
+    fn apply_mask_handles_all_or_none() {
+        let mut rec = ByteRecord::from(vec![b("a"), b("b")]);
+        let keep_all = FieldMask::from_predicate(rec.len(), |_| true);
+        rec.apply_mask(&keep_all);
+        assert_eq!(rec, vec![b("a"), b("b")]);
+
+        let mut rec = ByteRecord::from(vec![b("a"), b("b")]);
+        let keep_none = FieldMask::from_predicate(rec.len(), |_| false);
+        rec.apply_mask(&keep_none);
+        assert!(rec.is_empty());
+    }
+
+    #[test]
+    fn apply_mask_with_invert() {
+        let mut rec = ByteRecord::from(vec![b("a"), b("b"), b("c")]);
+        let drop_middle = FieldMask::from_indices(rec.len(), [1]).invert();
+        rec.apply_mask(&drop_middle);
+        assert_eq!(rec, vec![b("a"), b("c")]);
     }
 
     #[test]

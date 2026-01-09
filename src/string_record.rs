@@ -11,6 +11,7 @@ use crate::{
     byte_record::{ByteRecord, ByteRecordIter, Position},
     deserializer::deserialize_string_record,
     error::{Error, ErrorKind, FromUtf8Error, Result},
+    field_mask::FieldMask,
     reader::Reader,
 };
 
@@ -409,6 +410,25 @@ impl StringRecord {
         self.0.clear();
     }
 
+    /// Apply a field mask to this record, retaining only selected fields.
+    ///
+    /// The record is compacted in place to contain only the fields selected
+    /// by `mask`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use csv::{FieldMask, StringRecord};
+    ///
+    /// let mut record = StringRecord::from(vec!["a", "b", "c"]);
+    /// let mask = FieldMask::from_indices(record.len(), [1]);
+    /// record.apply_mask(&mask);
+    /// assert_eq!(record, vec!["b"]);
+    /// ```
+    pub fn apply_mask(&mut self, mask: &FieldMask) {
+        self.0.apply_mask(mask);
+    }
+
     /// Trim the fields of this record so that leading and trailing whitespace
     /// is removed.
     ///
@@ -746,6 +766,7 @@ impl<'r> DoubleEndedIterator for StringRecordIter<'r> {
 
 #[cfg(test)]
 mod tests {
+    use crate::field_mask::FieldMask;
     use crate::string_record::StringRecord;
 
     #[test]
@@ -813,6 +834,35 @@ mod tests {
         ]);
         rec.trim();
         assert_eq!(rec.get(0), Some(""));
+    }
+
+    #[test]
+    fn apply_mask_keeps_selected_fields() {
+        let mut rec = StringRecord::from(vec!["a", "b", "c"]);
+        let mask = FieldMask::from_indices(rec.len(), [0, 2]);
+        rec.apply_mask(&mask);
+        assert_eq!(rec, vec!["a", "c"]);
+    }
+
+    #[test]
+    fn apply_mask_handles_empty_record() {
+        let mut rec = StringRecord::new();
+        let mask = FieldMask::from_indices(rec.len(), []);
+        rec.apply_mask(&mask);
+        assert!(rec.is_empty());
+    }
+
+    #[test]
+    fn apply_mask_handles_all_or_none() {
+        let mut rec = StringRecord::from(vec!["a", "b"]);
+        let keep_all = FieldMask::from_predicate(rec.len(), |_| true);
+        rec.apply_mask(&keep_all);
+        assert_eq!(rec, vec!["a", "b"]);
+
+        let mut rec = StringRecord::from(vec!["a", "b"]);
+        let keep_none = FieldMask::from_predicate(rec.len(), |_| false);
+        rec.apply_mask(&keep_none);
+        assert!(rec.is_empty());
     }
 
     // Check that record equality respects field boundaries.
