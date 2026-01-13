@@ -1,7 +1,14 @@
+# Flow summary:
+# Create unique branch, push empty commit, open PR.
+# Calculate allowlisted A/M/D targets from the merged diff.
+# Post @codex job comment in the new PR.
+
+# I think the hash logic is necessary to avoid opening unnecessary PRs when there's no significant change since the on-create commit.
 name: Metadata via Codex post-merge (opens PR)
 
 on:
   pull_request:
+    # This should be 'merged'. PR which is not merged will be ignored.
     types: [closed]
 
 permissions:
@@ -19,6 +26,8 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Create branch only when there's change(except metadata update) since the on-create commit.
+      # For example, if we know the metadata-update commit from the on-create action, we can skip this step if there's no additional commit or code change from the on-create commit.
       - name: Create unique branch
         id: branch
         shell: bash
@@ -29,6 +38,7 @@ jobs:
           echo "name=$BR" >> "$GITHUB_OUTPUT"
           git checkout -b "$BR"
 
+      # If branch hasn't been created, this step isn't necessary neither.
       - name: Push empty commit (so PR can be opened)
         shell: bash
         run: |
