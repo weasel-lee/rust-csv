@@ -1,9 +1,3 @@
-# Flow summary:
-# Create unique branch, push empty commit, open PR.
-# Calculate allowlisted A/M/D targets from the merged diff.
-# Post @codex job comment in the new PR.
-
-# I think the hash logic is necessary to avoid opening unnecessary PRs when there's no significant change since the on-create commit.
 name: Metadata via Codex post-merge (opens PR)
 
 on:
@@ -119,8 +113,6 @@ jobs:
         run: |
           echo "No additional allowlisted Rust changes since metadata update; skipping post-merge metadata workflow."
 
-      # Create branch only when there's change(except metadata update) since the on-create commit.
-      # For example, if we know the metadata-update commit from the on-create action, we can skip this step if there's no additional commit or code change from the on-create commit.
       - name: Create unique branch
         id: branch
         if: steps.skip_check.outputs.skip != 'true'
@@ -132,7 +124,6 @@ jobs:
           echo "name=$BR" >> "$GITHUB_OUTPUT"
           git checkout -b "$BR"
 
-      # If branch hasn't been created, this step isn't necessary neither.
       - name: Push empty commit (so PR can be opened)
         if: steps.skip_check.outputs.skip != 'true'
         shell: bash
@@ -249,7 +240,7 @@ jobs:
             - Added Rust file: create metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
             - Deleted Rust file: delete corresponding .metadata.txt if exists.
-            - Do not include housekeeping hash headers like "# source_sha256:" in your output.
+            - Skip Rust files < 100 lines; include list of skipped files in summary.
 
             Targets (from merged diff):
             Added:

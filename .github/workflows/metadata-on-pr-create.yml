@@ -126,7 +126,8 @@ jobs:
             - Added Rust file: generate metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
             - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
-            - Do not include housekeeping hash headers like "# source_sha256:" in your output; those are handled by tooling.
+            - Skip Rust files < 100 lines; include list of skipped files in summary.
+
 
             Targets:
             Added:
