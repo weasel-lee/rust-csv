@@ -123,6 +123,7 @@ jobs:
       - name: Post @codex job comment in the new PR
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const prNum = Number("${{ steps.openpr.outputs.pr_number }}");
             const marker = "METADATA_POST_MERGE_JOB_V1";
@@ -131,16 +132,15 @@ jobs:
 
             ${marker}
 
-            Please update Rust metadata files in this PR (post-merge fixup).
+            Please update Rust metadata files in this PR (post-merge fixup). Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
 
             Rules:
-            - Allowlist: .github/metadata/allowlist.txt (supports !exclude).
-            - Output path mapping: /path/to/src/a.rs -> /path/to/src/a.metadata.txt
-            - Prompt: follow .github/metadata/prompt.txt exactly.
-            - Size rule: skip Rust files > 2000 lines; do not truncate; report skipped files.
-            - Deleted Rust file: delete corresponding .metadata.txt if exists.
+            - Allowlist: \`.github/metadata/allowlist.txt\` (supports !exclude).
+            - Output path mapping: \`/path/to/src/a.rs\` -> \`/path/to/src/a.metadata.txt\`
+            - Prompt: follow \`.github/metadata/prompt.txt\` exactly.
             - Added Rust file: create metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
+            - Deleted Rust file: delete corresponding .metadata.txt if exists.
             - Do not include housekeeping hash headers like "# source_sha256:" in your output.
 
             Targets (from merged diff):

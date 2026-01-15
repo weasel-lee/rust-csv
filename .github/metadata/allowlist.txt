@@ -5,3 +5,5 @@ crates/**/src/*.rs
 # exclude patterns: ! 로 시작
 !crates/experimental/**
 !crates/**/src/generated/*.rs
+
+# skipped (<100 lines): src/debug.rs

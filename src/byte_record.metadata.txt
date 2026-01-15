@@ -1,55 +1,55 @@
 ```
 [FILE METADATA]
 high_level_purpose:
-- Provide a raw-bytes CSV record type that can store non-UTF-8 data while still supporting field-level access, mutation, and deserialization.
-- Maintain a compact, contiguous buffer plus index bounds so record operations can be done in-place without per-field allocations.
+- Implements `ByteRecord`, a CSV row representation that stores raw bytes (including non-UTF-8) plus optional position metadata.
+- Provides low-level field storage, iteration, trimming, and Serde deserialization for byte-oriented CSV workflows.
 
 core_domain_concepts:
-- ByteRecord/ByteRecordInner: contiguous `fields` buffer plus `bounds` describing field endpoints, with optional `Position` metadata.
-- Bounds: per-field end indices plus a separate length counter used to describe the logical field count.
-- Position: byte/line/record offsets used for error reporting and reader bookkeeping.
+- ByteRecord: row container storing fields contiguously as bytes with explicit bounds.
+- Position: byte/line/record location used for error reporting.
+- Bounds: internal field boundary tracking (end offsets and field count).
+- ByteRecordIter: double-ended iterator over byte slices in a record.
 
 correctness_critical_invariants_and_assumptions:
-- Invariant: `bounds.len` is the authoritative field count; all public accessors/iterators assume it matches the logical number of fields.
-- Invariant: `bounds.ends[0..bounds.len]` is monotonically non-decreasing, and each end is within `fields`, so slices formed by successive ends are valid.
-- Invariant: field boundaries are defined by the previous end (or 0) to the current end; callers that mutate via internal APIs must preserve this layout.
-- Assumption: data may be non-UTF-8; consumers that require UTF-8 must call `validate` or otherwise ensure validity before conversion.
-- Assumption: `Position::set_line` requires `line > 0` and will panic otherwise; callers must uphold that contract.
+- Invariant: `Bounds.len` is the authoritative field count; `bounds.ends()[i]` are monotonically increasing and define field slices within the contiguous `fields` buffer.
+- Invariant: `Position.line` is always >= 1; `byte` and `record` counters are zero-based.
+- Invariant: `ByteRecord::validate` requires each field to be independently valid UTF-8; concatenated fields being valid is insufficient.
+- Assumption: callers that rely on equality compare only field bytes, not position metadata.
 
 lifecycle_and_main_flows:
-- Record construction and mutation: create with capacity → push/extend fields into the contiguous buffer → update bounds and reuse/clear/truncate as needed.
-- In-place normalization: `trim` and `retain` walk fields in order, compacting the buffer and rewriting `bounds.ends` while preserving field order.
-- Validation flow: `validate` performs a fast ASCII check, then per-field UTF-8 validation to support safe conversion to `StringRecord`.
+- Construction flow: allocate a contiguous byte buffer and bounds, push fields to extend the record, and optionally set position metadata.
+- Conversion flow: `StringRecord::from_byte_record` (via `validate`) or `deserialize` uses record contents plus optional headers.
+- Mutation flow: `trim` creates a new record with trimmed ASCII whitespace, preserving position metadata, then swaps in.
 
 edge_cases_and_tricky_behavior:
-- `truncate` and `clear` only adjust `bounds.len`; unused data remains in the buffer and is ignored by iteration.
-- `trim` and `retain` short-circuit on empty records; when they do run, they overwrite the buffer in-place, so any external slices to fields become invalid.
-- Comparison ignores `Position` metadata; equality is defined purely by field bytes.
+- `trim` uses ASCII whitespace only (not Unicode), and handles empty records without panicking.
+- UTF-8 validation reports the first invalid field and `valid_up_to` within that field; fields are validated independently, which can fail even if the concatenated buffer is valid.
+- `ByteRecord` equality ignores position, so two records with identical fields but different positions compare equal.
 
 concurrency_and_ordering_contracts:
 - None; logic is effectively single-threaded and synchronous.
 
 error_propagation_and_recovery:
-- UTF-8 validation returns `Utf8Error` with field index and byte offset via `validate`; callers decide whether to propagate or recover.
-- Deserialization delegates to `deserialize_byte_record`, propagating its `Result` without local recovery.
+- UTF-8 validation returns a `Utf8Error` with field index and offset; conversion to `StringRecord` wraps this as `FromUtf8Error`.
+- Serde deserialization errors are surfaced via `deserialize_byte_record` and carry the record position when available.
 
 design_and_responsibility_boundaries:
-- This module owns raw record storage, indexing, and position metadata; higher-level UTF-8 guarantees and lossy conversions are delegated to `StringRecord`.
-- Internal mutation hooks (`as_parts`, `set_len`, `expand_fields`, `expand_ends`) are crate-scoped, acting as extension points for reader/writer internals.
+- `ByteRecord` owns storage and boundary tracking; higher-level parsing/serialization lives in reader/writer modules.
+- Position tracking is optional and only set by readers or manual callers.
+- The record uses `Bounds` to avoid per-field allocations, trading complexity for performance.
 
 likely_bug_hotspots_and_risks:
-- Risk: in-place compaction (`trim`/`retain`) relies on correct `bounds.ends` ordering; any upstream corruption can lead to invalid slicing or data loss.
-- Risk: callers holding slices into `fields` while mutating the record can observe unexpected data because operations rewrite the buffer.
-- Risk: assumptions about UTF-8 validity are not enforced here; misuse can surface as unsafe conversions in other modules.
+- Risk: manual bounds and buffer growth (`expand_fields`/`Bounds::expand`) can introduce off-by-one or overflow issues for extremely large records.
+- Risk: ASCII-only trimming might surprise callers expecting Unicode whitespace trimming.
 
 refactoring_and_extension_notes:
-- The contiguous buffer + bounds model is central; refactors must preserve the invariant that `bounds.len` is authoritative and ends are in-order.
-- New field-wise operations should follow the existing in-place compaction pattern to avoid reallocations and to update bounds consistently.
+- Bounds and contiguous storage are tightly coupled; changes must preserve the invariant that slices are valid within the buffer.
+- Any new field-manipulation APIs should preserve position metadata and field boundary correctness.
 
 usage_guidance_for_future_llms:
-- For code review, focus on: bounds/field invariants, in-place compaction correctness, and UTF-8 validation usage.
-- For architectural review, consider: separation between raw-byte storage and UTF-8-specific behavior, and whether internal mutation APIs are sufficiently encapsulated.
-- For adding new features, pay particular attention to: preserving bounds ordering, updating `bounds.len` accurately, and avoiding invalidating UTF-8 assumptions.
-- When summarizing for a human, always mention: the raw-byte CSV record role and the invariant that field boundaries are defined by ordered end indices.
+- For code review, focus on: bounds updates, trimming behavior, and UTF-8 validation semantics per field.
+- For architectural review, consider: whether new record-level features belong here or in higher-level reader/writer APIs.
+- For adding new features, pay particular attention to: maintaining contiguous buffer invariants and error reporting accuracy.
+- When summarizing for a human, always mention: byte-oriented record storage, optional position tracking, and per-field UTF-8 validation behavior.
 [END FILE METADATA]
 ```
