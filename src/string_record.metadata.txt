@@ -1,0 +1,52 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements `StringRecord`, a UTF-8–validated CSV row type built on top of `ByteRecord`.
+- Provides safe conversions between byte and string records, trimming, iteration, and Serde deserialization for string-oriented workflows.
+
+core_domain_concepts:
+- StringRecord: UTF-8–validated record wrapper over `ByteRecord`.
+- FromUtf8Error: error that preserves the original `ByteRecord` and validation details.
+- Reader integration: internal `read` helper that fills a `StringRecord` from a `Reader` with UTF-8 validation.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: all fields in a `StringRecord` are valid UTF-8; methods like `get` and iteration assume this.
+- Invariant: `read` clears the underlying `ByteRecord` if UTF-8 validation fails, preventing invalid UTF-8 from persisting in a `StringRecord`.
+- Assumption: callers selecting `StringRecord` accept UTF-8 validation costs and failures for invalid data.
+
+lifecycle_and_main_flows:
+- Construction flow: create empty records, push fields, or convert from `ByteRecord` with validation.
+- Reader flow: `read` pulls a byte record from a `Reader`, validates UTF-8, and returns EOF/position-aware results.
+- Conversion flow: `from_byte_record_lossy` replaces invalid sequences with U+FFFD, yielding a usable `StringRecord`.
+
+edge_cases_and_tricky_behavior:
+- `from_byte_record_lossy` performs a lossy replacement for invalid UTF-8, which may mask data issues.
+- `trim` uses Unicode whitespace semantics (unlike `ByteRecord`, which uses ASCII), which can lead to differing behavior between record types.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- `from_byte_record` returns `FromUtf8Error` with the original record for recovery.
+- `read` returns `ErrorKind::Utf8` with the original reader position on UTF-8 validation failure.
+- Serde deserialization errors are surfaced via `deserialize_string_record` with optional position metadata.
+
+design_and_responsibility_boundaries:
+- This module focuses on UTF-8 safety and record ergonomics; parsing mechanics live in the reader and byte-level logic in `ByteRecord`.
+- Conversion APIs (`from_byte_record`, `into_byte_record`) are key boundaries for data validation and error capture.
+
+likely_bug_hotspots_and_risks:
+- Risk: assuming UTF-8 validity in downstream code can lead to panics if `StringRecord` invariants are violated by unsafe changes.
+- Risk: lossy conversions may be misused where strict validation is required.
+
+refactoring_and_extension_notes:
+- Preserve the invariant that `StringRecord` never contains invalid UTF-8, especially in `read` and conversion paths.
+- Any new trimming or transformation APIs should clarify Unicode vs ASCII behavior.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: UTF-8 validation paths, `read` safety guarantees, and trimming semantics.
+- For architectural review, consider: whether new data-tolerant behaviors belong here or in `ByteRecord`/reader APIs.
+- For adding new features, pay particular attention to: maintaining UTF-8 invariants and error propagation with position metadata.
+- When summarizing for a human, always mention: UTF-8 guarantees, conversion options (strict vs lossy), and reader integration.
+[END FILE METADATA]
+```

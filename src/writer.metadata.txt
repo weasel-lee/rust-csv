@@ -1,0 +1,56 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements CSV writing with configurable formatting, buffering, header generation, and Serde-based serialization.
+- Bridges `csv_core` output with higher-level `Writer` APIs and record-length enforcement.
+
+core_domain_concepts:
+- WriterBuilder: configuration for delimiter, terminator, quote style, flexibility, and header writing.
+- Writer: buffered writer that tracks header state, field counts, and record serialization.
+- HeaderState: state machine controlling whether headers are written via Serde serialization.
+- Buffer: internal byte buffer required by `csv_core` write APIs.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: when `flexible` is false, record field counts must match the first record; mismatches yield `ErrorKind::UnequalLengths`.
+- Invariant: `HeaderState` ensures headers are written at most once and only when enabled.
+- Invariant: `fields_written` resets per record and is compared against `first_field_count` for length checks.
+- Assumption: callers should not wrap the output in their own buffering; `Writer` manages buffering and flushing.
+
+lifecycle_and_main_flows:
+- Setup: configure `WriterBuilder`, build a `Writer` from a path or writer.
+- Write flow: `write_record` and `write_field` feed fields to `csv_core`, flushing the internal buffer as needed.
+- Serialize flow: `serialize` uses Serde to write fields and optional headers; header writing happens before the first serialized record.
+- Finalization flow: `flush` writes buffered bytes to the underlying writer; `into_inner` flushes and returns the inner writer or `IntoInnerError`.
+
+edge_cases_and_tricky_behavior:
+- Dropping a `Writer` triggers a flush unless it is already in a panicked state; write errors during drop are ignored.
+- `write_field` can be mixed with `write_record`, but callers must ensure record boundaries align to avoid unexpected field counts.
+- Header writing only occurs through Serde serialization; manual `write_record` calls do not auto-generate headers.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- I/O failures from flushing propagate as `io::Error` or `IntoInnerError` when consuming the writer.
+- Unequal record lengths raise `ErrorKind::UnequalLengths` unless `flexible` is enabled.
+- Serialization errors are wrapped as `ErrorKind::Serialize` and surfaced by `serialize`.
+
+design_and_responsibility_boundaries:
+- `Writer` handles buffering and state (headers, field counts), while `csv_core` performs low-level CSV formatting.
+- Serde-specific header logic is delegated to the `serializer` module.
+
+likely_bug_hotspots_and_risks:
+- Risk: interactions between `write_field` and `write_record` can accidentally desynchronize record boundaries.
+- Risk: header state transitions combined with serialization errors can lead to partial output (headers written but record fails).
+
+refactoring_and_extension_notes:
+- Preserve the `HeaderState` semantics and field-count tracking; these are user-visible behavioral contracts.
+- Any changes to buffering must respect `csv_core`’s requirement for mutable output slices.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: record-length enforcement, header state transitions, and flush behavior.
+- For architectural review, consider: how builder options map to `csv_core` settings and writer state.
+- For adding new features, pay particular attention to: header handling and interactions with `serialize`.
+- When summarizing for a human, always mention: configurable writer behavior, header handling, and record-length enforcement.
+[END FILE METADATA]
+```

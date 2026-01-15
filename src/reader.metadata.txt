@@ -1,0 +1,58 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements CSV reading and parsing, including builder configuration, header handling, trimming, and Serde deserialization iterators.
+- Bridges `csv_core` parsing with higher-level `StringRecord`/`ByteRecord` APIs and position-aware error reporting.
+
+core_domain_concepts:
+- ReaderBuilder: configuration for delimiters, terminators, header handling, trimming, and flexible record lengths.
+- Reader: buffered parser wrapper that owns parsing state, headers cache, and iteration APIs.
+- Headers: cached header record in both byte and string forms, with optional UTF-8 validation errors.
+- Iterators: record and deserialization iterators (borrowed and owned) that delegate to `read_record`/`read_byte_record`.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: when `flexible` is false, all records must match the field count of the first record; mismatches yield `ErrorKind::UnequalLengths`.
+- Invariant: header handling is centralized; when `has_headers` is true, the first record is consumed as headers and not yielded by record iterators.
+- Invariant: trimming rules differ by record type (Unicode for `StringRecord`, ASCII for `ByteRecord`) and are applied according to `Trim` settings.
+- Assumption: callers do not wrap the input in additional buffering; the reader manages buffering internally.
+
+lifecycle_and_main_flows:
+- Setup: configure a `ReaderBuilder`, then construct a `Reader` from a path or reader.
+- Header flow: headers are lazily read and cached on first access or during initial record reads; callers may also set them explicitly.
+- Record flow: `read_record`/`read_byte_record` pull records, apply trimming, enforce flexibility, and update position tracking.
+- Deserialization flow: `deserialize` iterators reuse the record reading path and pass cached headers for struct/map decoding.
+
+edge_cases_and_tricky_behavior:
+- If `has_headers` is false but headers were read or set manually, the reader can still return headers and may replay them once on the first record read.
+- Calling `headers` or `byte_headers` after seeking before the first record yields `ErrorKind::Seek`.
+- When trimming headers, invalid UTF-8 in headers yields an error for string headers while byte headers remain accessible.
+- Reading headers on empty input returns an empty record rather than an error.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- I/O and parsing errors surface directly; record-length mismatches raise `ErrorKind::UnequalLengths` unless `flexible` is enabled.
+- UTF-8 errors arise when converting byte headers or records into string records; byte access remains possible.
+- Serde deserialization errors are wrapped with record positions and propagated through iterators.
+
+design_and_responsibility_boundaries:
+- `Reader` owns parsing state and header caching; `csv_core` handles low-level CSV parsing.
+- `StringRecord` and `ByteRecord` encapsulate record storage/validation; reader coordinates trimming and position metadata.
+- Iterators are thin adapters over `read_record`/`read_byte_record` to keep behavior consistent.
+
+likely_bug_hotspots_and_risks:
+- Risk: header caching and trimming interactions (especially with invalid UTF-8) can lead to subtle mismatches between byte and string header views.
+- Risk: flexible vs non-flexible record-length enforcement depends on stateful tracking and can be error-prone when seeking.
+
+refactoring_and_extension_notes:
+- Preserve the lazy header read semantics; many APIs rely on headers being available both before and after iteration.
+- Any changes to trimming should keep the ASCII-vs-Unicode distinction intact to avoid breaking existing behavior.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: header caching logic, trimming application points, and unequal-length error handling.
+- For architectural review, consider: separation of concerns between parsing (`csv_core`) and record validation/normalization.
+- For adding new features, pay particular attention to: how new options interact with header caching and iterator behavior.
+- When summarizing for a human, always mention: configuration builder, header handling, and flexible record-length enforcement.
+[END FILE METADATA]
+```
