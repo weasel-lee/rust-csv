@@ -1,0 +1,52 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Defines the error types and formatting used across CSV reading, writing, and Serde integration.
+- Encapsulates position-aware error reporting for parsing, UTF-8 validation, and record-length mismatches.
+
+core_domain_concepts:
+- Error / ErrorKind: top-level error wrapper and detailed variants for I/O, UTF-8, unequal lengths, seek misuse, serialize, and deserialize errors.
+- Utf8Error / FromUtf8Error: structured UTF-8 validation errors with field index and offset context.
+- IntoInnerError: error returned when consuming a `Writer` fails during flush.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: `Error` is a thin wrapper over `ErrorKind` and uses `ErrorKind::position()` for convenience access.
+- Invariant: `Utf8Error` reports field index and `valid_up_to` within that field, matching per-field validation in record conversion.
+- Assumption: position metadata may be absent (`None`), so callers must handle missing positional context.
+
+lifecycle_and_main_flows:
+- Error creation: constructors in parsing/serialization code wrap specific failures into `ErrorKind` variants.
+- Display flow: `fmt::Display` formats user-readable messages, including position when available.
+- Recovery flow: `FromUtf8Error` retains the original `ByteRecord` for recovery or inspection.
+
+edge_cases_and_tricky_behavior:
+- `ErrorKind::Seek` is a specialized error signaling misuse of header access after seeking; it is not an I/O error.
+- `Error::is_io_error` only checks for `ErrorKind::Io`, which can matter when integrating with generic error handling.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- `Error` implements conversions to/from `io::Error`, enabling integration with standard I/O APIs.
+- `IntoInnerError` preserves the original writer for recovery after a failed flush.
+- `Deserialize` errors wrap underlying Serde failures and carry optional position metadata.
+
+design_and_responsibility_boundaries:
+- This module centralizes error taxonomy; other modules should only construct `ErrorKind` and not duplicate formatting logic.
+- UTF-8 errors are distinct from general I/O errors to allow precise user feedback and recovery paths.
+
+likely_bug_hotspots_and_risks:
+- Risk: inconsistent use of position metadata across modules can produce confusing error messages.
+- Risk: callers treating all errors as I/O may miss CSV-specific context (unequal lengths, UTF-8 errors).
+
+refactoring_and_extension_notes:
+- `ErrorKind` is `#[non_exhaustive]`; new variants should preserve backward compatibility and formatting expectations.
+- Maintain the separation between `Utf8Error` (validation) and `FromUtf8Error` (conversion with record context).
+
+usage_guidance_for_future_llms:
+- For code review, focus on: accurate error variant selection and inclusion of position metadata.
+- For architectural review, consider: whether new error types should extend `ErrorKind` or be wrapped separately.
+- For adding new features, pay particular attention to: ensuring new errors preserve diagnostics and recovery options.
+- When summarizing for a human, always mention: the main error variants and the availability of position-aware diagnostics.
+[END FILE METADATA]
+```

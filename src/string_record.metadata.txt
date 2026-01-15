@@ -1,0 +1,56 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements `StringRecord`, a UTF-8–validated CSV row type built on top of `ByteRecord`.
+- Provides safe conversions between byte and string records, in-place trimming/retention, iteration, and Serde deserialization for string-oriented workflows.
+
+core_domain_concepts:
+- StringRecord: UTF-8–validated record wrapper over `ByteRecord`.
+- FromUtf8Error: error that preserves the original `ByteRecord` and validation details.
+- Reader integration: internal `read` helper that fills a `StringRecord` from a `Reader` with UTF-8 validation.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: all fields in a `StringRecord` are valid UTF-8; methods like `get`, `trim`, and `retain` assume this and use unchecked UTF-8 conversion.
+- Invariant: `read` clears the underlying `ByteRecord` if UTF-8 validation fails, preventing invalid UTF-8 from persisting in a `StringRecord`.
+- Assumption: callers selecting `StringRecord` accept UTF-8 validation costs and failures for invalid data.
+
+lifecycle_and_main_flows:
+- Construction flow: create empty records, push fields, or convert from `ByteRecord` with validation.
+- Reader flow: `read` pulls a byte record from a `Reader`, validates UTF-8, and returns EOF/position-aware results.
+- Conversion flow: `from_byte_record_lossy` replaces invalid sequences with U+FFFD, yielding a usable `StringRecord`.
+- Mutation flow: `trim` and `retain` compact the underlying byte buffer in place via `ByteRecord`, updating bounds while preserving UTF-8 invariants.
+
+edge_cases_and_tricky_behavior:
+- `from_byte_record_lossy` performs a lossy replacement for invalid UTF-8, which may mask data issues.
+- `trim` uses Unicode whitespace semantics (unlike `ByteRecord`, which uses ASCII), which can lead to differing behavior between record types.
+- `retain` delegates to `ByteRecord::retain` and converts slices with `from_utf8_unchecked`; violating the UTF-8 invariant can lead to undefined behavior.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- `from_byte_record` returns `FromUtf8Error` with the original record for recovery.
+- `read` returns `ErrorKind::Utf8` with the original reader position on UTF-8 validation failure.
+- Serde deserialization errors are surfaced via `deserialize_string_record` with optional position metadata.
+
+design_and_responsibility_boundaries:
+- This module focuses on UTF-8 safety and record ergonomics; parsing mechanics live in the reader and byte-level logic in `ByteRecord`.
+- Conversion APIs (`from_byte_record`, `into_byte_record`) are key boundaries for data validation and error capture.
+- Field filtering is exposed via closures passed to `retain`, making predicate logic the primary extension point for in-place mutation.
+
+likely_bug_hotspots_and_risks:
+- Risk: assuming UTF-8 validity in downstream code can lead to panics or undefined behavior if `StringRecord` invariants are violated by unsafe changes.
+- Risk: lossy conversions may be misused where strict validation is required.
+- Risk: in-place compaction depends on correct bounds updates in the underlying `ByteRecord`.
+
+refactoring_and_extension_notes:
+- Preserve the invariant that `StringRecord` never contains invalid UTF-8, especially in `read` and conversion paths.
+- Any new trimming or transformation APIs should clarify Unicode vs ASCII behavior and retain the in-place compaction semantics.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: UTF-8 validation paths, unchecked conversions in `trim`/`retain`, and bounds updates in underlying byte records.
+- For architectural review, consider: whether new data-tolerant behaviors belong here or in `ByteRecord`/reader APIs.
+- For adding new features, pay particular attention to: maintaining UTF-8 invariants and error propagation with position metadata.
+- When summarizing for a human, always mention: UTF-8 guarantees, conversion options (strict vs lossy), and reader integration.
+[END FILE METADATA]
+```

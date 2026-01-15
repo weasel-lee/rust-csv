@@ -1,0 +1,53 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements Serde deserialization from CSV records (`StringRecord` or `ByteRecord`) into Rust types.
+- Provides a unified deserializer layer with detailed error reporting and optional header-based field mapping.
+
+core_domain_concepts:
+- DeRecord trait: abstraction over string vs byte record access used by the Serde deserializer.
+- DeStringRecord / DeByteRecord: concrete adapters that iterate fields and headers while tracking field index.
+- DeserializeError / DeserializeErrorKind: structured errors that include field index and parse failures.
+- Type inference: `deserialize_any` uses heuristics to infer booleans, integers, floats, or strings/bytes.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: field index (`field`) increments per field access and is used for error context; errors refer to the most recently accessed field.
+- Invariant: map/struct deserialization requires headers; `MapAccess::next_key_seed` assumes `has_headers()` and asserts it.
+- Assumption: header iteration and field iteration stay in lockstep for map/struct deserialization; mismatches can yield unexpected end-of-row errors.
+
+lifecycle_and_main_flows:
+- Entry: `deserialize_string_record`/`deserialize_byte_record` wraps a record adapter and runs Serde `Deserialize`.
+- Field access: adapters provide `next_field`/`next_header` plus peek capability for sequence termination.
+- Type inference: `deserialize_any` chooses bool → integer → float → string/bytes based on parse success.
+
+edge_cases_and_tricky_behavior:
+- `deserialize_any` on byte records falls back to bytes if UTF-8 decoding fails, but string records always yield UTF-8 strings.
+- Integer parsing supports hexadecimal when the field starts with `0x` (via `from_str_radix`).
+- `UnexpectedEndOfRow` is emitted when a type requests more fields than are present, which can surface for mismatched struct/row lengths.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- All Serde errors are wrapped in `DeserializeError`, which is then wrapped in `ErrorKind::Deserialize` with record position when available.
+- Parse errors are specialized (`ParseBool`, `ParseInt`, `ParseFloat`, `InvalidUtf8`) to preserve source details.
+
+design_and_responsibility_boundaries:
+- This module is the Serde boundary: it converts record fields into Serde’s `Deserializer` interface while keeping CSV-specific error context.
+- `DeRecord` isolates byte vs string differences to avoid redundant UTF-8 validation for `StringRecord`.
+
+likely_bug_hotspots_and_risks:
+- Risk: reliance on header presence for map/struct deserialization; misuse can lead to assertion failures or unexpected errors.
+- Risk: inference ordering in `deserialize_any` can cause surprising type choices (e.g., numeric-looking strings parsed as numbers).
+
+refactoring_and_extension_notes:
+- Preserve the field index tracking semantics; error context depends on it.
+- Any changes to inference order or parse heuristics should be considered API-affecting for downstream deserialization behavior.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: header handling, field index tracking, and parse error mapping.
+- For architectural review, consider: whether new deserialization behaviors belong in `DeRecord` vs higher-level reader APIs.
+- For adding new features, pay particular attention to: inference ordering and how invalid UTF-8 is surfaced for byte records.
+- When summarizing for a human, always mention: Serde adapter layer, header-based mapping, and field-indexed error reporting.
+[END FILE METADATA]
+```

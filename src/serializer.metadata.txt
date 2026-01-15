@@ -1,0 +1,52 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements Serde serialization from Rust values into CSV records using the crate’s `Writer`.
+- Provides a companion header serializer that derives header rows from struct field names with explicit state-machine rules.
+
+core_domain_concepts:
+- SeRecord: Serde `Serializer` that writes scalar values as CSV fields and flattens containers.
+- SeHeader: Serde `Serializer` that inspects a value for field names and writes header rows when appropriate.
+- HeaderState: state machine that enforces which serializer shapes are allowed when writing headers.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: record serialization writes fields in traversal order; nested containers are flattened depth-first.
+- Invariant: `serialize_none` and `serialize_unit` emit empty fields to preserve column count.
+- Assumption: header serialization only writes field names for struct-like data; other shapes should not trigger headers.
+
+lifecycle_and_main_flows:
+- Record flow: `serialize` instantiates `SeRecord` and delegates to Serde to write each field to the `Writer`.
+- Header flow: `serialize_header` runs `SeHeader`, which may write field names and returns whether headers were written.
+- State transitions: `SeHeader` enforces ordering rules (scalars/containers inside or outside struct fields) to prevent ambiguous header generation.
+
+edge_cases_and_tricky_behavior:
+- `SeHeader` rejects certain shapes (e.g., scalars after struct fields or containers inside struct fields) with explicit errors, based on the state machine.
+- Header writing for enums and variants depends on whether they expose field names; non-struct variants do not generate headers.
+- Byte and string fields are serialized as-is; no UTF-8 validation is performed for byte slices.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- Serialization errors are converted to `ErrorKind::Serialize` with descriptive messages for invalid shapes or unsupported operations.
+- The serializer propagates writer errors directly through `Writer::write_field` calls.
+
+design_and_responsibility_boundaries:
+- This module is the Serde boundary for writing; it delegates buffering and CSV formatting to `Writer`.
+- Header generation logic is isolated in `SeHeader`, making it an extension point for header behavior changes.
+
+likely_bug_hotspots_and_risks:
+- Risk: the header state machine is subtle; changes can break expectations about when headers are written or errors occur.
+- Risk: flattening nested containers can surprise callers expecting nested data to map to structured CSV columns.
+
+refactoring_and_extension_notes:
+- Preserve the `HeaderState` transitions and error rules; they encode API-visible behavior.
+- Any new serialization shapes or header rules should be reflected consistently between `SeRecord` and `SeHeader`.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: header state transitions, field flattening order, and error mapping.
+- For architectural review, consider: whether new header policies should be separate configuration options rather than serializer logic.
+- For adding new features, pay particular attention to: how Serde container shapes map to CSV columns and header generation rules.
+- When summarizing for a human, always mention: Serde serialization, flattening behavior, and header state-machine constraints.
+[END FILE METADATA]
+```

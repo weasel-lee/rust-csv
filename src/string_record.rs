@@ -450,14 +450,46 @@ impl StringRecord {
         if length == 0 {
             return;
         }
-        // TODO: We could likely do this in place, but for now, we allocate.
-        let mut trimmed =
-            StringRecord::with_capacity(self.as_slice().len(), self.len());
-        trimmed.set_position(self.position().cloned());
-        for field in &*self {
-            trimmed.push_field(field.trim());
+        let mut write = 0;
+        let mut prev_end = 0;
+        let (fields, ends) = self.0.as_parts();
+        for i in 0..length {
+            let end = ends[i];
+            let start = prev_end;
+            prev_end = end;
+            let field =
+                unsafe { str::from_utf8_unchecked(&fields[start..end]) };
+            let (trim_start, trim_end) = trim_unicode_range(field);
+            let trimmed_start = start + trim_start;
+            let trimmed_end = start + trim_end;
+            fields.copy_within(trimmed_start..trimmed_end, write);
+            write += trimmed_end - trimmed_start;
+            ends[i] = write;
         }
-        *self = trimmed;
+    }
+
+    /// Retain only the fields specified by the predicate.
+    ///
+    /// The predicate is applied in field order, and only fields for which the
+    /// predicate returns true are kept.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use csv::StringRecord;
+    ///
+    /// let mut record = StringRecord::from(vec!["a", "", "b", ""]);
+    /// record.retain(|field| !field.is_empty());
+    /// assert_eq!(record, vec!["a", "b"]);
+    /// ```
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&str) -> bool,
+    {
+        self.0.retain(|field| {
+            let field = unsafe { str::from_utf8_unchecked(field) };
+            keep(field)
+        });
     }
 
     /// Add a new field to this record.
@@ -764,6 +796,14 @@ impl<'r> DoubleEndedIterator for StringRecordIter<'r> {
     }
 }
 
+fn trim_unicode_range(field: &str) -> (usize, usize) {
+    let trimmed_start = field.trim_start();
+    let start = field.len() - trimmed_start.len();
+    let trimmed = trimmed_start.trim_end();
+    let end = start + trimmed.len();
+    (start, end)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::field_mask::FieldMask;
@@ -863,6 +903,13 @@ mod tests {
         let keep_none = FieldMask::from_predicate(rec.len(), |_| false);
         rec.apply_mask(&keep_none);
         assert!(rec.is_empty());
+    fn retain_fields() {
+        let mut rec = StringRecord::from(vec!["a", "", "b", "", "c"]);
+        rec.retain(|field| !field.is_empty());
+        assert_eq!(rec, vec!["a", "b", "c"]);
+
+        rec.retain(|field| field == "b");
+        assert_eq!(rec, vec!["b"]);
     }
 
     // Check that record equality respects field boundaries.
