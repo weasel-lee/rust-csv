@@ -26,7 +26,8 @@ jobs:
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const marker = "METADATA_ON_CREATE_SHA:";
+            const marker = "METADATA_JOB_REQUEST_V1";
+            const shaPattern = /METADATA_ON_CREATE_SHA:([0-9a-f]{40})/;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -35,11 +36,21 @@ jobs:
             });
 
             let recorded = "";
-            for (const comment of comments) {
+            const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR", "BOT"]);
+            for (const comment of [...comments].reverse()) {
               const body = comment.body || "";
-              const match = body.match(/METADATA_ON_CREATE_SHA:([0-9a-f]{40})/);
+              if (!body.includes(marker)) {
+                continue;
+              }
+              const assoc = comment.author_association || "";
+              const isBot = comment.user && comment.user.type === "Bot";
+              if (!isBot && !trustedAssociations.has(assoc)) {
+                continue;
+              }
+              const match = body.match(shaPattern);
               if (match) {
                 recorded = match[1];
+                break;
               }
             }
             core.setOutput("recorded_sha", recorded);
@@ -52,12 +63,22 @@ jobs:
           RECORDED_SHA="${{ steps.record_sha.outputs.recorded_sha }}"
           MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
 
+          PR_HEAD="${{ github.event.pull_request.head.sha }}"
           if [[ -n "$RECORDED_SHA" ]]; then
-            git fetch --no-tags origin "$RECORDED_SHA" "$MERGE_SHA"
-            BASE_SHA="$RECORDED_SHA"
-            HEAD_SHA="$MERGE_SHA"
-          else
-            PR_HEAD="${{ github.event.pull_request.head.sha }}"
+            if git fetch --no-tags origin "$RECORDED_SHA" "$MERGE_SHA" "$PR_HEAD"; then
+              if git merge-base --is-ancestor "$RECORDED_SHA" "$MERGE_SHA"; then
+                BASE_SHA="$RECORDED_SHA"
+                HEAD_SHA="$MERGE_SHA"
+              else
+                echo "Recorded SHA is not in merge history; falling back to PR head."
+                RECORDED_SHA=""
+              fi
+            else
+              echo "Recorded SHA fetch failed; falling back to PR head."
+              RECORDED_SHA=""
+            fi
+          fi
+          if [[ -z "$RECORDED_SHA" ]]; then
             git fetch --no-tags origin "$PR_HEAD" "$MERGE_SHA"
 
             METADATA_COMMIT="$(git log -n 1 --pretty=%H "$PR_HEAD" -- '**/*.metadata.txt' || true)"
