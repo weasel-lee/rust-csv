@@ -1,4 +1,4 @@
-name: Metadata via Codex on PR create/ready
+name: On PR create/ready metadata update via Codex
 
 on:
   pull_request:
