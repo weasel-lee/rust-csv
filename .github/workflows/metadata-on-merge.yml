@@ -1,32 +1,42 @@
-name: Post-merge metadata update via Codex (opens PR)
+name: On PR approval metadata update via Codex
 
 on:
-  pull_request:
-    types: [closed]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
-  contents: write
   pull-requests: write
+  contents: read
+
+concurrency:
+  group: metadata-codex-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
-  post_merge:
-    if: github.event.pull_request.merged == true
+  request_codex_on_approval:
+    if: >
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout default branch
+      - name: Checkout PR head
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Read metadata-on-create record
+      - name: Read latest metadata request record
         id: record_sha
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const marker = "METADATA_JOB_REQUEST_V1";
-            const shaPattern = /METADATA_ON_CREATE_SHA:([0-9a-f]{40})/;
+            const markers = new Set(["METADATA_JOB_REQUEST_V1", "METADATA_APPROVAL_JOB_V1"]);
+            const shaPatterns = [
+              /METADATA_ON_CREATE_SHA:([0-9a-f]{40})/,
+              /METADATA_ON_APPROVAL_SHA:([0-9a-f]{40})/
+            ];
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -38,7 +48,7 @@ jobs:
             const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR", "BOT"]);
             for (const comment of [...comments].reverse()) {
               const body = comment.body || "";
-              if (!body.includes(marker)) {
+              if (![...markers].some(marker => body.includes(marker))) {
                 continue;
               }
               const assoc = comment.author_association || "";
@@ -46,50 +56,49 @@ jobs:
               if (!isBot && !trustedAssociations.has(assoc)) {
                 continue;
               }
-              const match = body.match(shaPattern);
-              if (match) {
-                recorded = match[1];
+              for (const pattern of shaPatterns) {
+                const match = body.match(pattern);
+                if (match) {
+                  recorded = match[1];
+                  break;
+                }
+              }
+              if (recorded) {
                 break;
               }
             }
             core.setOutput("recorded_sha", recorded);
 
-      - name: Check for post-merge metadata update requirement
-        id: skip_check
+      - name: Compute allowlisted A/M/D targets since last metadata update
+        id: targets
         shell: bash
         run: |
           set -euo pipefail
           RECORDED_SHA="${{ steps.record_sha.outputs.recorded_sha }}"
-          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          PR_BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
-          PR_HEAD="${{ github.event.pull_request.head.sha }}"
           if [[ -n "$RECORDED_SHA" ]]; then
-            if git fetch --no-tags origin "$RECORDED_SHA" "$MERGE_SHA" "$PR_HEAD"; then
-              if git merge-base --is-ancestor "$RECORDED_SHA" "$MERGE_SHA"; then
-                BASE_SHA="$RECORDED_SHA"
-                HEAD_SHA="$MERGE_SHA"
-              else
-                echo "Recorded SHA is not in merge history; falling back to PR head."
-                RECORDED_SHA=""
-              fi
+            git fetch --no-tags origin "$RECORDED_SHA" "$HEAD_SHA"
+            if git merge-base --is-ancestor "$RECORDED_SHA" "$HEAD_SHA"; then
+              DIFF_BASE="$RECORDED_SHA"
             else
-              echo "Recorded SHA fetch failed; falling back to PR head."
-              RECORDED_SHA=""
+              echo "Recorded SHA is not in PR history; using base SHA."
+              DIFF_BASE="$PR_BASE"
+              git fetch --no-tags origin "$PR_BASE"
             fi
-          fi
-          if [[ -z "$RECORDED_SHA" ]]; then
-            git fetch --no-tags origin "$PR_HEAD" "$MERGE_SHA"
-            BASE_SHA="$PR_HEAD"
-            HEAD_SHA="$MERGE_SHA"
+          else
+            DIFF_BASE="$PR_BASE"
+            git fetch --no-tags origin "$PR_BASE"
           fi
 
-          BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" python - << 'PY' >> "$GITHUB_OUTPUT"
+          DIFF_BASE="$DIFF_BASE" HEAD_SHA="$HEAD_SHA" python - << 'PY' >> "$GITHUB_OUTPUT"
           import fnmatch
           import os
           import pathlib
           import subprocess
 
-          base_sha = os.environ["BASE_SHA"]
+          base_sha = os.environ["DIFF_BASE"]
           head_sha = os.environ["HEAD_SHA"]
 
           def git(*args):
@@ -117,146 +126,84 @@ jobs:
 
           changed = git("diff", "--name-only", base_sha, head_sha)
           rs_changes = [p for p in changed if allowed(p)]
-          skip = "true" if not rs_changes else "false"
-          print(f"skip={skip}")
-          PY
+          meta_changes = [p for p in changed if p.endswith(".metadata.txt")]
+          skip = "true" if (not rs_changes or meta_changes) else "false"
 
-      - name: Skip post-merge metadata update (no new code changes)
-        if: steps.skip_check.outputs.skip == 'true'
-        shell: bash
-        run: |
-          echo "No additional allowlisted Rust changes since metadata update; skipping post-merge metadata workflow."
-
-      - name: Create unique branch
-        id: branch
-        if: steps.skip_check.outputs.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          TS="$(date -u +'%Y%m%d-%H%M%S')"
-          BR="bot/metadata-post-merge-pr${{ github.event.pull_request.number }}-$TS"
-          echo "name=$BR" >> "$GITHUB_OUTPUT"
-          git checkout -b "$BR"
-
-      - name: Push empty commit (so PR can be opened)
-        if: steps.skip_check.outputs.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore: post-merge metadata scaffold"
-          git push origin HEAD
-
-      - name: Open PR
-        id: openpr
-        if: steps.skip_check.outputs.skip != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const base = context.payload.pull_request.base.ref;
-            const head = "${{ steps.branch.outputs.name }}";
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Post-merge metadata update (after #${context.payload.pull_request.number})`,
-              head,
-              base,
-              body: `Auto-update *.metadata.txt after PR #${context.payload.pull_request.number} merged.`
-            });
-            core.setOutput("pr_number", pr.number);
-
-      - name: Compute allowlisted A/M/D targets for the merge
-        id: targets
-        if: steps.skip_check.outputs.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          git fetch --no-tags origin "$MERGE_SHA"
-          git checkout "$MERGE_SHA"
-          BASE_SHA="$(git rev-parse "$MERGE_SHA^")"
-
-          python - << 'PY' >> "$GITHUB_OUTPUT"
-          import fnmatch, pathlib, subprocess
-
-          merge = "${{ github.event.pull_request.merge_commit_sha }}"
-          base = subprocess.check_output(["git","rev-parse",f"{merge}^"], text=True).strip()
-
-          def git(*args):
-              return subprocess.check_output(["git", *args], text=True).splitlines()
-
-          allow_path = pathlib.Path(".github/metadata/allowlist.txt")
-          lines=[]
-          if allow_path.exists():
-              for raw in allow_path.read_text(encoding="utf-8").splitlines():
-                  s=raw.strip()
-                  if not s or s.startswith("#"): 
-                      continue
-                  lines.append(s)
-          includes=[x for x in lines if not x.startswith("!")]
-          excludes=[x[1:] for x in lines if x.startswith("!")]
-
-          def allowed(p:str)->bool:
-              if not p.endswith(".rs"): return False
-              if includes and not any(fnmatch.fnmatch(p, pat) for pat in includes): return False
-              if excludes and any(fnmatch.fnmatch(p, pat) for pat in excludes): return False
-              return True
-
-          rows = git("diff","--name-status", base, merge)
-
-          added=[]; modified=[]; deleted=[]
+          rows = git("diff", "--name-status", base_sha, head_sha)
+          added = []
+          modified = []
+          deleted = []
           for r in rows:
-              parts=r.split("\t")
-              st=parts[0]
-              if st.startswith(("R","C")) and len(parts) >= 3:
-                  old,new = parts[1], parts[2]
-                  if allowed(old): deleted.append(old)
-                  if allowed(new): added.append(new)
+              parts = r.split("\t")
+              st = parts[0]
+              if st.startswith(("R", "C")) and len(parts) >= 3:
+                  old, new = parts[1], parts[2]
+                  if allowed(old):
+                      deleted.append(old)
+                  if allowed(new):
+                      added.append(new)
                   continue
-              if len(parts) < 2: 
+              if len(parts) < 2:
                   continue
-              path=parts[1]
-              if not allowed(path): 
+              path = parts[1]
+              if not allowed(path):
                   continue
-              if st=="A": added.append(path)
-              elif st=="M": modified.append(path)
-              elif st=="D": deleted.append(path)
+              if st == "A":
+                  added.append(path)
+              elif st == "M":
+                  modified.append(path)
+              elif st == "D":
+                  deleted.append(path)
 
           def fmt(xs):
-              xs=sorted(set(xs))
+              xs = sorted(set(xs))
               return "\n".join(f"- {x}" for x in xs) if xs else "(none)"
 
-          print("added<<EOF"); print(fmt(added)); print("EOF")
-          print("modified<<EOF"); print(fmt(modified)); print("EOF")
-          print("deleted<<EOF"); print(fmt(deleted)); print("EOF")
+          print(f"skip={skip}")
+          print("added<<EOF")
+          print(fmt(added))
+          print("EOF")
+          print("modified<<EOF")
+          print(fmt(modified))
+          print("EOF")
+          print("deleted<<EOF")
+          print(fmt(deleted))
+          print("EOF")
           PY
 
-      - name: Post @codex job comment in the new PR
-        if: steps.skip_check.outputs.skip != 'true'
+      - name: Skip metadata update (already handled or no relevant changes)
+        if: steps.targets.outputs.skip == 'true'
+        shell: bash
+        run: |
+          echo "Skip metadata update (no allowlisted Rust changes or metadata already updated)."
+
+      - name: Post @codex job comment
+        if: steps.targets.outputs.skip != 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
-            const prNum = Number("${{ steps.openpr.outputs.pr_number }}");
-            const marker = "METADATA_POST_MERGE_JOB_V1";
+            const pr = context.payload.pull_request.number;
+            const marker = "METADATA_APPROVAL_JOB_V1";
+            const recordedSha = context.payload.pull_request.head.sha;
 
             const body = `@codex
 
             ${marker}
+            METADATA_ON_APPROVAL_SHA:${recordedSha}
 
-            Please update Rust metadata files in this PR (post-merge fixup). Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
+            Please update Rust metadata files for this PR. Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
 
             Rules:
-            - Allowlist: \`.github/metadata/allowlist.txt\` (supports !exclude).
+            - Allowlist: use glob patterns from \`.github/metadata/allowlist.txt\` (supports !exclude lines).
             - Output path mapping: \`/path/to/src/a.rs\` -> \`/path/to/src/a.metadata.txt\`
-            - Prompt: follow \`.github/metadata/prompt.txt\` exactly.
-            - Added Rust file: create metadata from Rust source + prompt.
+            - Prompt: follow \`.github/metadata/prompt.txt\` exactly for output structure and style.
+            - Added Rust file: generate metadata from Rust source + prompt.
             - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
-            - Deleted Rust file: delete corresponding .metadata.txt if exists.
+            - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
             - Skip Rust files < 100 lines; include list of skipped files in summary.
 
-            Targets (from merged diff):
+            Targets (since last metadata update):
             Added:
             ${{ steps.targets.outputs.added }}
 
@@ -269,6 +216,6 @@ jobs:
                         await github.rest.issues.createComment({
                           owner: context.repo.owner,
                           repo: context.repo.repo,
-                          issue_number: prNum,
+                          issue_number: pr,
                           body
                         });
