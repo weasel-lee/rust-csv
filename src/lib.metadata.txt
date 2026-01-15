@@ -3,11 +3,13 @@
 high_level_purpose:
 - Defines the crate’s public surface (re-exports and module wiring) plus small configuration enums for CSV parsing/writing behavior.
 - Provides the `invalid_option` Serde helper to intentionally treat invalid, non-empty fields as `None` instead of errors.
+- Exposes lightweight helpers such as `FieldMask` for record-level field selection APIs.
 
 core_domain_concepts:
 - QuoteStyle: high-level quoting policy used by writers, mapped to `csv_core` quote behavior.
 - Terminator: record terminator policy (CRLF vs an explicit byte) used by readers/writers.
 - Trim: whitespace trimming policy for headers and/or fields in readers.
+- FieldMask: mask used by record APIs to keep or drop fields during in-place compaction.
 - invalid_option: custom deserializer helper that converts invalid `Option<T>` values into `None`.
 
 correctness_critical_invariants_and_assumptions:
@@ -43,7 +45,7 @@ refactoring_and_extension_notes:
 
 usage_guidance_for_future_llms:
 - For code review, focus on: correctness of enum-to-core mappings and the intentional error suppression in `invalid_option`.
-- For architectural review, consider: whether new configuration knobs belong here or in submodules.
+- For architectural review, consider: whether new configuration knobs or helper types (like `FieldMask`) belong here or in submodules.
 - For adding new features, pay particular attention to: maintaining `non_exhaustive` compatibility and documenting behavior changes.
 - When summarizing for a human, always mention: the crate-level configuration enums and the `invalid_option` behavior.
 [END FILE METADATA]

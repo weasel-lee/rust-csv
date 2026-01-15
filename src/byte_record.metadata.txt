@@ -2,29 +2,32 @@
 [FILE METADATA]
 high_level_purpose:
 - Implements `ByteRecord`, a CSV row representation that stores raw bytes (including non-UTF-8) plus optional position metadata.
-- Provides low-level field storage, iteration, in-place field mutation (trim/retain), and Serde deserialization for byte-oriented CSV workflows.
+- Provides low-level field storage, iteration, in-place field mutation (trim/retain/mask), and Serde deserialization for byte-oriented CSV workflows.
 
 core_domain_concepts:
 - ByteRecord: row container storing fields contiguously as bytes with explicit bounds.
 - Position: byte/line/record location used for error reporting.
 - Bounds: internal field boundary tracking (end offsets and field count).
 - ByteRecordIter: double-ended iterator over byte slices in a record.
+- FieldMask: index-selection bitmap used by `apply_mask` to retain only chosen fields.
 
 correctness_critical_invariants_and_assumptions:
 - Invariant: `Bounds.len` is the authoritative field count; `bounds.ends()[i]` are monotonically increasing and define field slices within the contiguous `fields` buffer.
-- Invariant: in-place mutations (`trim`, `retain`) must update `bounds.ends` and `bounds.len` to match the compacted buffer and kept field count.
+- Invariant: in-place mutations (`trim`, `retain`, `apply_mask`) must update `bounds.ends` and `bounds.len` to match the compacted buffer and kept field count.
 - Invariant: `Position.line` is always >= 1; `byte` and `record` counters are zero-based.
 - Invariant: `ByteRecord::validate` requires each field to be independently valid UTF-8; concatenated fields being valid is insufficient.
 - Assumption: callers that rely on equality compare only field bytes, not position metadata.
+- Assumption: masks used with `apply_mask` are sized for the original record length; indices beyond the mask length are treated as false (fields dropped).
 
 lifecycle_and_main_flows:
 - Construction flow: allocate a contiguous byte buffer and bounds, push fields to extend the record, and optionally set position metadata.
 - Conversion flow: `StringRecord::from_byte_record` (via `validate`) or `deserialize` uses record contents plus optional headers.
-- Mutation flow: `trim` and `retain` compact the existing buffer in place with `copy_within`, updating bounds to reflect the new field layout while preserving position metadata.
+- Mutation flow: `trim`, `retain`, and `apply_mask` compact the existing buffer in place with `copy_within`, updating bounds to reflect the new field layout while preserving position metadata.
 
 edge_cases_and_tricky_behavior:
 - `trim` uses ASCII whitespace only (not Unicode), and handles empty records without panicking.
 - `retain` preserves field order while dropping fields; trailing data in the buffer may remain but is unreachable once `bounds.len` shrinks.
+- `apply_mask` treats out-of-range indices as unselected, so a shorter mask silently drops trailing fields.
 - UTF-8 validation reports the first invalid field and `valid_up_to` within that field; fields are validated independently, which can fail even if the concatenated buffer is valid.
 - `ByteRecord` equality ignores position, so two records with identical fields but different positions compare equal.
 
@@ -42,7 +45,8 @@ design_and_responsibility_boundaries:
 
 likely_bug_hotspots_and_risks:
 - Risk: manual bounds and buffer growth (`expand_fields`/`Bounds::expand`) can introduce off-by-one or overflow issues for extremely large records.
-- Risk: in-place compaction (`trim`/`retain`) relies on precise index math; mistakes can corrupt boundaries or data ordering.
+- Risk: in-place compaction (`trim`/`retain`/`apply_mask`) relies on precise index math; mistakes can corrupt boundaries or data ordering.
+- Risk: mask length mismatches can silently drop fields when `apply_mask` treats out-of-range indices as false.
 - Risk: ASCII-only trimming might surprise callers expecting Unicode whitespace trimming.
 
 refactoring_and_extension_notes:
@@ -50,7 +54,7 @@ refactoring_and_extension_notes:
 - Any new field-manipulation APIs should preserve position metadata and field boundary correctness.
 
 usage_guidance_for_future_llms:
-- For code review, focus on: bounds updates, in-place compaction logic, and UTF-8 validation semantics per field.
+- For code review, focus on: bounds updates, in-place compaction logic, `apply_mask` selection behavior, and UTF-8 validation semantics per field.
 - For architectural review, consider: whether new record-level features belong here or in higher-level reader/writer APIs.
 - For adding new features, pay particular attention to: maintaining contiguous buffer invariants and error reporting accuracy.
 - When summarizing for a human, always mention: byte-oriented record storage, optional position tracking, and per-field UTF-8 validation behavior.
