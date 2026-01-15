@@ -1,0 +1,50 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Defines the crate’s public surface (re-exports and module wiring) plus small configuration enums for CSV parsing/writing behavior.
+- Provides the `invalid_option` Serde helper to intentionally treat invalid, non-empty fields as `None` instead of errors.
+
+core_domain_concepts:
+- QuoteStyle: high-level quoting policy used by writers, mapped to `csv_core` quote behavior.
+- Terminator: record terminator policy (CRLF vs an explicit byte) used by readers/writers.
+- Trim: whitespace trimming policy for headers and/or fields in readers.
+- invalid_option: custom deserializer helper that converts invalid `Option<T>` values into `None`.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: `Trim` variants explicitly control whether headers, fields, or both are trimmed; callers rely on these for consistent parsing semantics.
+- Invariant: `Terminator::CRLF` treats `\r`, `\n`, and `\r\n` as a single terminator, while `Any` uses the provided byte literally.
+- Assumption: users who opt into `invalid_option` accept silent data loss for non-empty invalid fields.
+
+lifecycle_and_main_flows:
+- Configuration flow: enums (QuoteStyle/Terminator/Trim) are chosen at build time and converted to `csv_core` equivalents during reader/writer construction.
+- Deserialization flow: `invalid_option` defers to `Option<T>` deserialization and coerces any error into `None`.
+
+edge_cases_and_tricky_behavior:
+- `invalid_option` suppresses all parsing errors for non-empty invalid fields, which can mask data quality issues.
+- `Trim` only governs whitespace removal; it does not affect other parsing behaviors (e.g., delimiter handling).
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- `invalid_option` deliberately converts deserialization errors into `Ok(None)` instead of propagating them.
+
+design_and_responsibility_boundaries:
+- This module centralizes public API exposure (re-exports) and lightweight configuration enums, leaving heavy parsing/serialization logic to submodules.
+- `invalid_option` is an explicit opt-in extension point for tolerant parsing.
+
+likely_bug_hotspots_and_risks:
+- Risk: misuse of `invalid_option` can hide malformed data and complicate debugging.
+- Risk: misunderstanding of `Trim` semantics (headers vs fields) can lead to subtle data mismatches.
+
+refactoring_and_extension_notes:
+- `#[non_exhaustive]` enums signal planned extensibility; new variants must remain backward compatible for public API.
+- The module’s role as a façade means changes here can have wide API impact; prefer additive changes.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: correctness of enum-to-core mappings and the intentional error suppression in `invalid_option`.
+- For architectural review, consider: whether new configuration knobs belong here or in submodules.
+- For adding new features, pay particular attention to: maintaining `non_exhaustive` compatibility and documenting behavior changes.
+- When summarizing for a human, always mention: the crate-level configuration enums and the `invalid_option` behavior.
+[END FILE METADATA]
+```

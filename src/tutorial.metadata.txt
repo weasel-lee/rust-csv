@@ -1,0 +1,42 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Provides an in-depth tutorial for using the CSV crate, covering reading, writing, headers, Serde, and configuration.
+- Acts as narrative onboarding material for users new to the crate and to CSV parsing in Rust.
+
+core_domain_concepts:
+- Usage patterns: reader/writer construction, record iteration, deserialization/serialization, and configuration knobs.
+- CSV semantics guidance: headers, delimiters, trimming, and error handling expectations in examples.
+
+correctness_critical_invariants_and_assumptions:
+- Assumption: tutorial examples and explanations stay aligned with actual API behavior and defaults.
+- Invariant: documented defaults (e.g., header handling and delimiters) must match code to avoid user confusion.
+
+lifecycle_and_main_flows:
+- Documentation flow: sequential tutorial sections that build from basic reading to advanced Serde and configuration usage.
+
+edge_cases_and_tricky_behavior:
+- Tutorial highlights behavior differences (e.g., headers vs no headers) to prevent misinterpretation of record iteration results.
+
+concurrency_and_ordering_contracts:
+- None; documentation only.
+
+error_propagation_and_recovery:
+- Examples demonstrate propagating errors via `Result` and handling failures in `main`.
+
+design_and_responsibility_boundaries:
+- This module is purely documentation and does not contain runtime logic; it should mirror public API behavior.
+
+likely_bug_hotspots_and_risks:
+- Risk: documentation drift when API defaults or behaviors change can mislead users.
+
+refactoring_and_extension_notes:
+- When adding new features or changing defaults, update the tutorial to keep examples and explanations accurate.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: correctness of the narrative and example alignment with API behavior.
+- For architectural review, consider: whether new features require tutorial coverage to support onboarding.
+- For adding new features, pay particular attention to: updating tutorial sections that describe defaults or core workflows.
+- When summarizing for a human, always mention: this is the main user-facing tutorial with step-by-step examples.
+[END FILE METADATA]
+```

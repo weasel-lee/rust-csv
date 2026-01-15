@@ -1,0 +1,42 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Provides narrative documentation and runnable examples for common CSV reading and writing scenarios.
+- Serves as a curated index of example programs demonstrating the public API.
+
+core_domain_concepts:
+- Example workflows: basic read/write, Serde integration, delimiter configuration, and header handling.
+- User guidance: links and references to example binaries in the `examples` directory.
+
+correctness_critical_invariants_and_assumptions:
+- Assumption: examples reflect the intended public API usage and are kept in sync with actual behavior.
+- Invariant: documentation references example filenames and commands that should remain valid.
+
+lifecycle_and_main_flows:
+- Documentation flow: each section introduces a scenario, presents code, and shows how to run it.
+
+edge_cases_and_tricky_behavior:
+- Examples emphasize error handling via `Result` and `?`, illustrating propagation expectations rather than exhaustive error cases.
+
+concurrency_and_ordering_contracts:
+- None; documentation only.
+
+error_propagation_and_recovery:
+- Examples demonstrate standard error propagation via `Result` and explicit error printing in `main`.
+
+design_and_responsibility_boundaries:
+- This module is purely documentation; it does not implement runtime logic.
+
+likely_bug_hotspots_and_risks:
+- Risk: example code or command lines can drift from actual API behavior, leading to user confusion.
+
+refactoring_and_extension_notes:
+- Keep example lists and headings in sync with actual example files when adding or removing examples.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: accuracy of example code and references to example binaries.
+- For architectural review, consider: whether new features should be illustrated here for user onboarding.
+- For adding new features, pay particular attention to: updating the example list and ensuring instructions remain runnable.
+- When summarizing for a human, always mention: this is documentation with runnable examples for the CSV API.
+[END FILE METADATA]
+```

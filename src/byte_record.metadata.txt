@@ -1,0 +1,55 @@
+```
+[FILE METADATA]
+high_level_purpose:
+- Implements `ByteRecord`, a CSV row representation that stores raw bytes (including non-UTF-8) plus optional position metadata.
+- Provides low-level field storage, iteration, trimming, and Serde deserialization for byte-oriented CSV workflows.
+
+core_domain_concepts:
+- ByteRecord: row container storing fields contiguously as bytes with explicit bounds.
+- Position: byte/line/record location used for error reporting.
+- Bounds: internal field boundary tracking (end offsets and field count).
+- ByteRecordIter: double-ended iterator over byte slices in a record.
+
+correctness_critical_invariants_and_assumptions:
+- Invariant: `Bounds.len` is the authoritative field count; `bounds.ends()[i]` are monotonically increasing and define field slices within the contiguous `fields` buffer.
+- Invariant: `Position.line` is always >= 1; `byte` and `record` counters are zero-based.
+- Invariant: `ByteRecord::validate` requires each field to be independently valid UTF-8; concatenated fields being valid is insufficient.
+- Assumption: callers that rely on equality compare only field bytes, not position metadata.
+
+lifecycle_and_main_flows:
+- Construction flow: allocate a contiguous byte buffer and bounds, push fields to extend the record, and optionally set position metadata.
+- Conversion flow: `StringRecord::from_byte_record` (via `validate`) or `deserialize` uses record contents plus optional headers.
+- Mutation flow: `trim` creates a new record with trimmed ASCII whitespace, preserving position metadata, then swaps in.
+
+edge_cases_and_tricky_behavior:
+- `trim` uses ASCII whitespace only (not Unicode), and handles empty records without panicking.
+- UTF-8 validation reports the first invalid field and `valid_up_to` within that field; fields are validated independently, which can fail even if the concatenated buffer is valid.
+- `ByteRecord` equality ignores position, so two records with identical fields but different positions compare equal.
+
+concurrency_and_ordering_contracts:
+- None; logic is effectively single-threaded and synchronous.
+
+error_propagation_and_recovery:
+- UTF-8 validation returns a `Utf8Error` with field index and offset; conversion to `StringRecord` wraps this as `FromUtf8Error`.
+- Serde deserialization errors are surfaced via `deserialize_byte_record` and carry the record position when available.
+
+design_and_responsibility_boundaries:
+- `ByteRecord` owns storage and boundary tracking; higher-level parsing/serialization lives in reader/writer modules.
+- Position tracking is optional and only set by readers or manual callers.
+- The record uses `Bounds` to avoid per-field allocations, trading complexity for performance.
+
+likely_bug_hotspots_and_risks:
+- Risk: manual bounds and buffer growth (`expand_fields`/`Bounds::expand`) can introduce off-by-one or overflow issues for extremely large records.
+- Risk: ASCII-only trimming might surprise callers expecting Unicode whitespace trimming.
+
+refactoring_and_extension_notes:
+- Bounds and contiguous storage are tightly coupled; changes must preserve the invariant that slices are valid within the buffer.
+- Any new field-manipulation APIs should preserve position metadata and field boundary correctness.
+
+usage_guidance_for_future_llms:
+- For code review, focus on: bounds updates, trimming behavior, and UTF-8 validation semantics per field.
+- For architectural review, consider: whether new record-level features belong here or in higher-level reader/writer APIs.
+- For adding new features, pay particular attention to: maintaining contiguous buffer invariants and error reporting accuracy.
+- When summarizing for a human, always mention: byte-oriented record storage, optional position tracking, and per-field UTF-8 validation behavior.
+[END FILE METADATA]
+```
