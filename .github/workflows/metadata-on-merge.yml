@@ -2,7 +2,6 @@ name: Metadata via Codex post-merge (opens PR)
 
 on:
   pull_request:
-    # This should be 'merged'. PR which is not merged will be ignored.
     types: [closed]
 
 permissions:
