@@ -33,7 +33,7 @@ error_propagation_and_recovery:
 
 design_and_responsibility_boundaries:
 - This module centralizes public API exposure (re-exports) and lightweight configuration enums, leaving heavy parsing/serialization logic to submodules.
-- `invalid_option` is an explicit opt-in extension point for tolerant parsing.
+- `invalid_option` and `FieldMask` are explicit opt-in extension points for tolerant parsing and record-level filtering.
 
 likely_bug_hotspots_and_risks:
 - Risk: misuse of `invalid_option` can hide malformed data and complicate debugging.

@@ -17,7 +17,7 @@ correctness_critical_invariants_and_assumptions:
 - Invariant: `Position.line` is always >= 1; `byte` and `record` counters are zero-based.
 - Invariant: `ByteRecord::validate` requires each field to be independently valid UTF-8; concatenated fields being valid is insufficient.
 - Assumption: callers that rely on equality compare only field bytes, not position metadata.
-- Assumption: masks used with `apply_mask` are sized for the original record length; indices beyond the mask length are treated as false (fields dropped).
+- Assumption: masks used with `apply_mask` are sized for the record length at the time of masking; out-of-range indices are treated as false (fields dropped).
 
 lifecycle_and_main_flows:
 - Construction flow: allocate a contiguous byte buffer and bounds, push fields to extend the record, and optionally set position metadata.

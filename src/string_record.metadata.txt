@@ -8,7 +8,7 @@ core_domain_concepts:
 - StringRecord: UTF-8–validated record wrapper over `ByteRecord`.
 - FromUtf8Error: error that preserves the original `ByteRecord` and validation details.
 - Reader integration: internal `read` helper that fills a `StringRecord` from a `Reader` with UTF-8 validation.
-- FieldMask: selection bitmap forwarded to the underlying `ByteRecord` to drop fields in place.
+- FieldMask: selection bitmap forwarded to the underlying `ByteRecord` to drop fields in place (shared with `ByteRecord`).
 
 correctness_critical_invariants_and_assumptions:
 - Invariant: all fields in a `StringRecord` are valid UTF-8; methods like `get`, `trim`, and `retain` assume this and use unchecked UTF-8 conversion.
