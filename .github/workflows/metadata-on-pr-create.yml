@@ -98,6 +98,7 @@ jobs:
           script: |
             const pr = context.payload.pull_request.number;
             const marker = "METADATA_JOB_REQUEST_V1";
+            const recordedSha = context.payload.pull_request.head.sha;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -114,6 +115,7 @@ jobs:
             const body = `@codex
 
             ${marker}
+            METADATA_ON_CREATE_SHA:${recordedSha}
 
             Please update Rust metadata files for this PR. Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
 
