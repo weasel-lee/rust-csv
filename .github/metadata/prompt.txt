@@ -14,19 +14,21 @@ Think of this as caching the *hard parts* of understanding so that future LLM ca
 
 Input format:
 
-The runtime will provide a single text input that contains labeled sections, exactly like:
+The runtime will provide a single text input like:
 
+```
 === TARGET ===
 <path/to/file.rs>
-
-=== RUST SOURCE (<path/to/file.rs>) ===
-<Rust source code for this file>
 
 === EXISTING METADATA (<path/to/file.metadata.txt>) ===
 <Existing *.metadata.txt contents for this file>
 (or the literal placeholder "<none>" if there is no existing metadata)
 
-=== OUTPUT INSTRUCTIONS ===
+=== RUST SOURCE (<path/to/file.rs>) ===
+<Rust source code for this file>
+```
+
+OUTPUT INSTRUCTIONS:
 Write the new/updated metadata text only.
 
 How to interpret inputs:
