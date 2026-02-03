@@ -17,9 +17,6 @@ Input format:
 The runtime will provide a single text input like:
 
 ```
-=== TARGET ===
-<path/to/file.rs>
-
 === EXISTING METADATA (<path/to/file.metadata.txt>) ===
 <Existing *.metadata.txt contents for this file>
 (or the literal placeholder "<none>" if there is no existing metadata)
@@ -42,9 +39,27 @@ Important UPDATE-mode rules:
 - Do NOT output a diff. Output the full refreshed metadata block in the exact required structure below.
 - If the existing metadata contains non-semantic housekeeping lines (e.g., hash headers such as "# source_sha256: ..."), ignore them and do not include them in the final output.
 
+DEPTH + GROUNDING REQUIREMENTS (STRICT):
+- Target size: Aim for ~80–150 lines of content inside the metadata block (excluding the outer triple backticks). Be longer for genuinely complex files; be shorter only if the file is truly simple.
+- Avoid generic filler: Every bullet should be specific to THIS file. Prefer facts that would be expensive to re-derive.
+- Grounding rule: Every bullet must reference at least one concrete, file-specific identifier or term present in the RUST SOURCE (e.g., a type/trait/function name, enum variant, constant, error name, log message key, protocol/exchange name, etc.). If a section truly has nothing meaningful, explicitly say so (e.g., “None; …”) rather than writing generic advice.
+- Recommended minimum depth per section:
+  - `high_level_purpose`: 2 bullets.
+  - `core_domain_concepts`: 2 bullets.
+  - `correctness_critical_invariants_and_assumptions`: 3 bullets.
+  - `lifecycle_and_main_flows`: 3 bullets.
+  - `edge_cases_and_tricky_behavior`: 2 bullets.
+  - `concurrency_and_ordering_contracts`: 3 bullets, OR the exact single bullet “None; logic is effectively single-threaded and synchronous.”
+  - `design_and_responsibility_boundaries`: 2 bullets.
+  - `likely_bug_hotspots_and_risks`: 2 bullets.
+  - `refactoring_and_extension_notes`: 2 bullets.
+
 Your output must be EXACTLY this structure:
 
 [FILE METADATA]
+update_at:
+- <current date in YYYY-MM-DD format>
+
 high_level_purpose:
 - <1–3 bullets that describe why this module exists and what role it plays in the larger system. Focus on behavior and responsibilities, not syntax.>
 
@@ -96,12 +111,6 @@ refactoring_and_extension_notes:
 - <describe aspects of the design that make future changes or new features easier or harder: strong coupling, global state, shared locks, assumptions that would need to be broken, etc.>
 - <note natural seams where the module could be split, where responsibilities could be extracted, or where a new feature would most cleanly hook in.>
 - <mention any “do not break” contracts that refactors or new features must respect.>
-
-usage_guidance_for_future_llms:
-- For code review, focus on: <X> (e.g., specific invariants, edge cases, concurrency contracts, and identified risk areas).
-- For architectural review, consider: <Y> (e.g., boundaries that are currently blurred, places where responsibilities could be separated, or where abstractions leak).
-- For adding new features, pay particular attention to: <Z> (e.g., invariants that must remain true, extension points that are safe to use, and areas flagged as high-risk for regressions).
-- When summarizing for a human, always mention: <the core responsibilities and one or two key invariants/assumptions that define the module’s behavior.>
 [END FILE METADATA]
 
 Additional instructions:
