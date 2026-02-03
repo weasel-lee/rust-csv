@@ -50,7 +50,7 @@ jobs:
           if allow_path.exists():
               for raw in allow_path.read_text(encoding="utf-8").splitlines():
                   s=raw.strip()
-                  if not s or s.startswith("#"): 
+                  if not s or s.startswith("#"):
                       continue
                   lines.append(s)
           includes=[x for x in lines if not x.startswith("!")]
@@ -73,10 +73,10 @@ jobs:
                   if allowed(old): deleted.append(old)
                   if allowed(new): added.append(new)
                   continue
-              if len(parts) < 2: 
+              if len(parts) < 2:
                   continue
               path=parts[1]
-              if not allowed(path): 
+              if not allowed(path):
                   continue
               if st=="A": added.append(path)
               elif st=="M": modified.append(path)
