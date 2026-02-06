@@ -23,8 +23,23 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+
+      - name: Load trusted allowlist (base SHA)
+        id: trusted_inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+
+          git fetch --no-tags origin "$BASE_REF"
+
+          allowlist_file="$(mktemp)"
+          git show "${BASE_SHA}:.github/metadata/allowlist.txt" > "$allowlist_file"
+
+          echo "allowlist_file=$allowlist_file" >> "$GITHUB_OUTPUT"
 
       - name: Read latest metadata request record
         id: record_sha
@@ -37,7 +52,7 @@ jobs:
               /METADATA_ON_CREATE_SHA:([0-9a-f]{40})/,
               /METADATA_ON_APPROVAL_SHA:([0-9a-f]{40})/
             ];
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
@@ -69,7 +84,7 @@ jobs:
             }
             core.setOutput("recorded_sha", recorded);
 
-      - name: Compute allowlisted A/M/D targets since last metadata update
+      - name: Compute allowlisted A/M/D targets since last metadata request
         id: targets
         shell: bash
         run: |
@@ -78,21 +93,18 @@ jobs:
           PR_BASE="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
-          if [[ -n "$RECORDED_SHA" ]]; then
-            git fetch --no-tags origin "$RECORDED_SHA" "$HEAD_SHA"
+          if [[ -n "$RECORDED_SHA" ]] && git cat-file -e "$RECORDED_SHA^{commit}" 2>/dev/null; then
             if git merge-base --is-ancestor "$RECORDED_SHA" "$HEAD_SHA"; then
               DIFF_BASE="$RECORDED_SHA"
             else
               echo "Recorded SHA is not in PR history; using base SHA."
               DIFF_BASE="$PR_BASE"
-              git fetch --no-tags origin "$PR_BASE"
             fi
           else
             DIFF_BASE="$PR_BASE"
-            git fetch --no-tags origin "$PR_BASE"
           fi
 
-          DIFF_BASE="$DIFF_BASE" HEAD_SHA="$HEAD_SHA" python - << 'PY' >> "$GITHUB_OUTPUT"
+          DIFF_BASE="$DIFF_BASE" HEAD_SHA="$HEAD_SHA" ALLOWLIST_FILE="${{ steps.trusted_inputs.outputs.allowlist_file }}" python - << 'PY' >> "$GITHUB_OUTPUT"
           import fnmatch
           import os
           import pathlib
@@ -104,7 +116,7 @@ jobs:
           def git(*args):
               return subprocess.check_output(["git", *args], text=True).splitlines()
 
-          allow_path = pathlib.Path(".github/metadata/allowlist.txt")
+          allow_path = pathlib.Path(os.environ["ALLOWLIST_FILE"])
           lines = []
           if allow_path.exists():
               for raw in allow_path.read_text(encoding="utf-8").splitlines():
@@ -123,11 +135,6 @@ jobs:
               if excludes and any(fnmatch.fnmatch(p, pat) for pat in excludes):
                   return False
               return True
-
-          changed = git("diff", "--name-only", base_sha, head_sha)
-          rs_changes = [p for p in changed if allowed(p)]
-          meta_changes = [p for p in changed if p.endswith(".metadata.txt")]
-          skip = "true" if (not rs_changes or meta_changes) else "false"
 
           rows = git("diff", "--name-status", base_sha, head_sha)
           added = []
@@ -154,6 +161,7 @@ jobs:
                   modified.append(path)
               elif st == "D":
                   deleted.append(path)
+          skip = "true" if (not (added or modified or deleted)) else "false"
 
           def fmt(xs):
               xs = sorted(set(xs))
@@ -175,47 +183,59 @@ jobs:
         if: steps.targets.outputs.skip == 'true'
         shell: bash
         run: |
-          echo "Skip metadata update (no allowlisted Rust changes or metadata already updated)."
+          echo "Skip metadata update (no allowlisted Rust changes since last metadata request)."
 
       - name: Post @codex job comment
         if: steps.targets.outputs.skip != 'true'
         uses: actions/github-script@v7
+        env:
+          ADDED: ${{ steps.targets.outputs.added }}
+          MODIFIED: ${{ steps.targets.outputs.modified }}
+          DELETED: ${{ steps.targets.outputs.deleted }}
         with:
           github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const pr = context.payload.pull_request.number;
             const marker = "METADATA_APPROVAL_JOB_V1";
             const recordedSha = context.payload.pull_request.head.sha;
+            const baseSha = context.payload.pull_request.base.sha;
 
-            const body = `@codex
+            const added = (process.env.ADDED || "").trimEnd();
+            const modified = (process.env.MODIFIED || "").trimEnd();
+            const deleted = (process.env.DELETED || "").trimEnd();
 
-            ${marker}
-            METADATA_ON_APPROVAL_SHA:${recordedSha}
+            const body = [
+              "@codex",
+              "",
+              marker,
+              `METADATA_ON_APPROVAL_SHA:${recordedSha}`,
+              `METADATA_BASE_SHA:${baseSha}`,
+              "",
+              "Please update Rust metadata files for this PR. Submit the result directly to GitHub (commit) without asking for toggles or confirmations.",
+              "",
+              "Rules:",
+              "- Allowlist: use `.github/metadata/allowlist.txt` at METADATA_BASE_SHA (ignore PR edits).",
+              "- Prompt: follow `.github/metadata/prompt.txt` at METADATA_BASE_SHA exactly (ignore PR edits).",
+              "- Output path mapping: `/path/to/src/a.rs` -> `/path/to/src/a.metadata.txt`",
+              "- Added Rust file: generate metadata from Rust source + prompt.",
+              "- Modified Rust file: update metadata using Rust source + existing metadata + prompt.",
+              "- Deleted Rust file: if corresponding .metadata.txt exists, delete it.",
+              "- Skip Rust files < 100 lines; include list of skipped files in summary.",
+              "",
+              "Targets (since last metadata request):",
+              "Added:",
+              added,
+              "",
+              "Modified:",
+              modified,
+              "",
+              "Deleted:",
+              deleted,
+            ].join("\n") + "\n";
 
-            Please update Rust metadata files for this PR. Submit the result directly to GitHub (commit) without asking for toggles or confirmations.
-
-            Rules:
-            - Allowlist: use glob patterns from \`.github/metadata/allowlist.txt\` (supports !exclude lines).
-            - Output path mapping: \`/path/to/src/a.rs\` -> \`/path/to/src/a.metadata.txt\`
-            - Prompt: follow \`.github/metadata/prompt.txt\` exactly for output structure and style.
-            - Added Rust file: generate metadata from Rust source + prompt.
-            - Modified Rust file: update metadata using Rust source + existing metadata + prompt.
-            - Deleted Rust file: if corresponding .metadata.txt exists, delete it.
-            - Skip Rust files < 100 lines; include list of skipped files in summary.
-
-            Targets (since last metadata update):
-            Added:
-            ${{ steps.targets.outputs.added }}
-
-            Modified:
-            ${{ steps.targets.outputs.modified }}
-
-            Deleted:
-            ${{ steps.targets.outputs.deleted }}
-            `;
-                        await github.rest.issues.createComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          issue_number: pr,
-                          body
-                        });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body
+            });
