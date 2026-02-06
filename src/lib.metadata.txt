@@ -1,52 +1,96 @@
 ```
 [FILE METADATA]
+update_at:
+- 2026-02-06
+
 high_level_purpose:
-- Defines the crate’s public surface (re-exports and module wiring) plus small configuration enums for CSV parsing/writing behavior.
-- Provides the `invalid_option` Serde helper to intentionally treat invalid, non-empty fields as `None` instead of errors.
-- Exposes lightweight helpers such as `FieldMask` for record-level field selection APIs.
+- Serves as the crate-level façade that documents the `csv` crate and exposes its main public API such as `Reader`, `Writer`, `ReaderBuilder`, and `WriterBuilder`.
+- Re-exports core record types like `StringRecord`, `ByteRecord`, and `Position` so callers can use parsing results without drilling into submodules.
+- Centralizes public error types like `Error`, `ErrorKind`, `Utf8Error`, `FromUtf8Error`, and `IntoInnerError` to keep error handling consistent at the crate root.
+- Provides small, public configuration enums (`QuoteStyle`, `Terminator`, `Trim`) and helper types (`FieldMask`) used by the reader/writer builders.
 
 core_domain_concepts:
-- QuoteStyle: high-level quoting policy used by writers, mapped to `csv_core` quote behavior.
-- Terminator: record terminator policy (CRLF vs an explicit byte) used by readers/writers.
-- Trim: whitespace trimming policy for headers and/or fields in readers.
-- FieldMask: mask used by record APIs to keep or drop fields during in-place compaction.
-- invalid_option: custom deserializer helper that converts invalid `Option<T>` values into `None`.
+- `Reader` / `Writer`: primary streaming CSV I/O types surfaced at the crate root for reading/writing records.
+- `ReaderBuilder` / `WriterBuilder`: configuration entry points that consume `QuoteStyle`, `Terminator`, and `Trim` to shape runtime behavior.
+- `StringRecord` / `ByteRecord`: record containers that differentiate UTF-8 (`StringRecord`) from potentially non-UTF-8 (`ByteRecord`) data.
+- `FieldMask`: a filtering mask used by record APIs to keep or drop fields during in-place compaction.
+- `QuoteStyle`: writer quoting policy mapped to `csv_core::QuoteStyle` via `QuoteStyle::to_core`.
+- `Terminator`: record terminator policy, mapping `Terminator::CRLF` and `Terminator::Any(u8)` to `csv_core::Terminator`.
+- `Trim`: whitespace trimming policy for headers and/or fields, with `Trim::None`, `Trim::Headers`, `Trim::Fields`, and `Trim::All`.
+- `invalid_option`: Serde deserializer helper for tolerant `Option<T>` parsing that suppresses errors.
 
 correctness_critical_invariants_and_assumptions:
-- Invariant: `Trim` variants explicitly control whether headers, fields, or both are trimmed; callers rely on these for consistent parsing semantics.
-- Invariant: `Terminator::CRLF` treats `\r`, `\n`, and `\r\n` as a single terminator, while `Any` uses the provided byte literally.
-- Assumption: users who opt into `invalid_option` accept silent data loss for non-empty invalid fields.
+- Invariant: `QuoteStyle::to_core` must preserve the semantics of each `QuoteStyle` variant when converting to `csv_core::QuoteStyle`.
+- Invariant: `QuoteStyle::Necessary` is the default (`#[default]`) and is expected to mirror `csv_core::QuoteStyle::Necessary` for consistency.
+- Invariant: `Terminator::CRLF` treats `\r`, `\n`, or `\r\n` as a single terminator, and that mapping is preserved in `Terminator::to_core`.
+- Invariant: `Terminator::Any(b)` uses the provided byte literally in `csv_core::Terminator::Any(b)` rather than interpreting it as a multi-byte sequence.
+- Invariant: `Trim::should_trim_fields` returns true only for `Trim::Fields` and `Trim::All`, matching caller expectations in reader logic.
+- Invariant: `Trim::should_trim_headers` returns true only for `Trim::Headers` and `Trim::All`, leaving `Trim::None` and `Trim::Fields` unchanged.
+- Invariant: `Trim` is `#[non_exhaustive]`, so downstream code must be resilient to future variants and avoid exhaustive matching.
+- Invariant: `QuoteStyle` and `Terminator` are `#[non_exhaustive]`, so new variants must preserve backwards-compatible public behavior.
+- Assumption: users of `invalid_option` accept that invalid, non-empty fields are silently coerced to `None` rather than producing `DeserializeError`.
+- Assumption: `Option<T>` deserialization in `invalid_option` is the only path taken, so `Deserialize` implementations for `T` are responsible for data validation.
+- Assumption: public re-exports like `DeserializeError` and `DeserializeErrorKind` remain stable identifiers for external error matching.
+- Assumption: the crate-level docs in `src/lib.rs` set expectations for onboarding and APIs (e.g., `tutorial` and `cookbook` links) that users rely on.
 
 lifecycle_and_main_flows:
-- Configuration flow: enums (QuoteStyle/Terminator/Trim) are chosen at build time and converted to `csv_core` equivalents during reader/writer construction.
-- Deserialization flow: `invalid_option` defers to `Option<T>` deserialization and coerces any error into `None`.
+- Crate API flow: consumers import `Reader`/`Writer` from the crate root, then construct instances directly or through `ReaderBuilder`/`WriterBuilder`.
+- Configuration flow: `QuoteStyle`, `Terminator`, and `Trim` are selected at build time and translated via `to_core` or `should_trim_*` methods inside reader/writer setup.
+- Record flow: callers iterate over `StringRecord` or `ByteRecord` via `StringRecordsIter`, `ByteRecordsIter`, or the `DeserializeRecordsIter` types.
+- Error flow: parsing and UTF-8 errors surface as `Error`, `ErrorKind`, or `Utf8Error`, enabling consistent handling across reader/writer operations.
+- Deserialization flow: `invalid_option` calls `Option::<T>::deserialize` and converts any `D::Error` into `Ok(None)` for the enclosing `Result`.
+- API exposure flow: `pub use crate::{...}` wires up module exports such as `byte_record`, `reader`, `writer`, and `serializer` for external use.
+- Documentation flow: crate docs at the top of `src/lib.rs` describe the `tutorial` and `cookbook` as entry points for new users.
+- Builder iteration flow: `DeserializeRecordsIter` and `DeserializeRecordsIntoIter` are exported to support streaming Serde use cases.
+- Position flow: `Position` is re-exported from `byte_record` for error reporting and record location tracking.
 
 edge_cases_and_tricky_behavior:
-- `invalid_option` suppresses all parsing errors for non-empty invalid fields, which can mask data quality issues.
-- `Trim` only governs whitespace removal; it does not affect other parsing behaviors (e.g., delimiter handling).
+- `QuoteStyle::Never` can deliberately emit invalid CSV output, so users must ensure downstream consumers can tolerate unquoted delimiters.
+- `QuoteStyle::NonNumeric` depends on numeric parsing rules inside writer logic, meaning values like `NaN` or `inf` may be treated as non-numeric and quoted.
+- `Terminator::CRLF` treats standalone `\r` and `\n` as terminators, which can surprise users expecting strict `\r\n` semantics.
+- `Terminator::Any(b)` allows non-printable bytes as terminators, which can affect interoperability with external CSV tools.
+- `Trim::Headers` only affects headers, not field values, so `Trim::Headers` + `Trim::Fields` behavior must be represented via `Trim::All`.
+- `Trim::None` preserves whitespace verbatim, so `StringRecord` data can include leading/trailing spaces even when `ReaderBuilder` uses default config.
+- `invalid_option` suppresses all deserialization errors for non-empty fields, potentially hiding malformed data that would otherwise produce `DeserializeError`.
+- The crate root re-exports `serde_core::Deserialize`-based errors, so mismatched Serde versions can manifest as `DeserializeError` mismatches.
 
 concurrency_and_ordering_contracts:
 - None; logic is effectively single-threaded and synchronous.
 
 error_propagation_and_recovery:
-- `invalid_option` deliberately converts deserialization errors into `Ok(None)` instead of propagating them.
+- `invalid_option` explicitly converts any `D::Error` from `Option::<T>::deserialize` into `Ok(None)`, never propagating that error upward.
+- Parsing errors surface through the `Error` and `ErrorKind` re-exports rather than being wrapped at the crate root.
+- UTF-8 decoding failures are represented by `Utf8Error` or `FromUtf8Error`, enabling caller-specific recovery strategies.
+- `IntoInnerError` is re-exported for scenarios where writer flushing fails but access to the inner writer is still needed.
+- `DeserializeError` and `DeserializeErrorKind` are re-exported so callers can distinguish Serde-specific failures from core parsing errors.
+- No retry logic exists at this layer; all error recovery is left to callers of `Reader`/`Writer` APIs.
 
 design_and_responsibility_boundaries:
-- This module centralizes public API exposure (re-exports) and lightweight configuration enums, leaving heavy parsing/serialization logic to submodules.
-- `invalid_option` and `FieldMask` are explicit opt-in extension points for tolerant parsing and record-level filtering.
+- The crate root coordinates module exposure (`byte_record`, `reader`, `writer`, `serializer`) but delegates heavy parsing/serialization logic to those modules.
+- Configuration enums (`QuoteStyle`, `Terminator`, `Trim`) are defined here to keep policy choices centralized and accessible to `ReaderBuilder`/`WriterBuilder`.
+- `invalid_option` is a small, explicit opt-in helper and does not alter default Serde behavior unless `serde(deserialize_with)` is used.
+- `FieldMask` is re-exported for record-level filtering, while the actual masking logic lives in `field_mask`.
+- `pub use` re-exports ensure external users can avoid deep module paths, but this also makes the crate root a compatibility boundary.
+- `to_core` methods encapsulate conversion to `csv_core` types, isolating dependency-specific details from public APIs.
+- The crate documentation and the `tutorial` / `cookbook` modules serve onboarding responsibilities, separate from core parsing logic.
+- `Trim` helper methods (`should_trim_fields`, `should_trim_headers`) keep trimming decisions localized, rather than spreading that logic into the reader module.
+- `serde_core::Deserialize` is only referenced indirectly via `invalid_option`, minimizing Serde coupling elsewhere in this module.
 
 likely_bug_hotspots_and_risks:
-- Risk: misuse of `invalid_option` can hide malformed data and complicate debugging.
-- Risk: misunderstanding of `Trim` semantics (headers vs fields) can lead to subtle data mismatches.
+- Risk: misalignment between `QuoteStyle` variants and `csv_core::QuoteStyle` in `to_core` could silently change writer behavior.
+- Risk: `Terminator::CRLF` semantics might be misinterpreted by users expecting literal CRLF only, leading to unexpected record boundaries.
+- Risk: `Trim::Headers` vs `Trim::Fields` is subtle; incorrect use can yield mismatched header/value alignment in `StringRecord` output.
+- Risk: `invalid_option` can mask data quality issues, making debugging of malformed inputs harder when using `DeserializeRecordsIter`.
+- Risk: adding new `#[non_exhaustive]` variants to `QuoteStyle`, `Terminator`, or `Trim` requires careful documentation to avoid breaking user assumptions.
+- Risk: expanding crate root exports could create name collisions with existing re-exports like `ReaderBuilder` or `WriterBuilder`.
+- Risk: `QuoteStyle::NonNumeric` relies on numeric parsing behavior in writer code, which could shift across versions and affect quoting.
 
 refactoring_and_extension_notes:
-- `#[non_exhaustive]` enums signal planned extensibility; new variants must remain backward compatible for public API.
-- The module’s role as a façade means changes here can have wide API impact; prefer additive changes.
-
-usage_guidance_for_future_llms:
-- For code review, focus on: correctness of enum-to-core mappings and the intentional error suppression in `invalid_option`.
-- For architectural review, consider: whether new configuration knobs or helper types (like `FieldMask`) belong here or in submodules.
-- For adding new features, pay particular attention to: maintaining `non_exhaustive` compatibility and documenting behavior changes.
-- When summarizing for a human, always mention: the crate-level configuration enums and the `invalid_option` behavior.
+- Any refactor must preserve the public re-export surface (`Reader`, `Writer`, `StringRecord`, `Error`, etc.) because downstream crates depend on these names.
+- Adding new configuration knobs should likely follow the existing pattern of small enums (`QuoteStyle`, `Terminator`, `Trim`) with `#[non_exhaustive]` markers.
+- `invalid_option` is a stable extension seam for tolerant deserialization; changes to its behavior must maintain the `Ok(None)` contract.
+- `to_core` conversion functions are a natural seam for adapting to future `csv_core` API changes without altering public enums.
+- If new onboarding material is added, it should integrate with `tutorial` and `cookbook` links already in the crate docs.
+- Any change to `Trim::should_trim_fields` or `Trim::should_trim_headers` should preserve their current predicate semantics to avoid reader regressions.
 [END FILE METADATA]
 ```
