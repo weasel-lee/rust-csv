@@ -3,7 +3,7 @@ The `csv` crate provides a fast and flexible CSV reader and writer, with
 support for Serde.
 
 The [tutorial](tutorial/index.html) is a good place to start if you're new to
-Rust.
+Rust, and the docs are organized to make onboarding straightforward.
 
 The [cookbook](cookbook/index.html) will give you a variety of complete Rust
 programs that do CSV reading and writing.
