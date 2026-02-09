@@ -18,11 +18,16 @@ use crate::{
     {Terminator, Trim},
 };
 
+const DEFAULT_BUFFER_CAPACITY: usize = 8 * (1 << 10);
+
 /// Builds a CSV reader with various configuration knobs.
 ///
 /// This builder can be used to tweak the field delimiter, record terminator
 /// and more. Once a CSV `Reader` is built, its configuration cannot be
 /// changed.
+///
+/// By default, the reader expects CSV headers; use `has_headers(false)` if
+/// your input does not include them.
 #[derive(Debug)]
 pub struct ReaderBuilder {
     capacity: usize,
@@ -40,7 +45,7 @@ pub struct ReaderBuilder {
 impl Default for ReaderBuilder {
     fn default() -> ReaderBuilder {
         ReaderBuilder {
-            capacity: 8 * (1 << 10),
+            capacity: DEFAULT_BUFFER_CAPACITY,
             flexible: false,
             has_headers: true,
             trim: Trim::default(),
