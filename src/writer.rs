@@ -15,11 +15,16 @@ use crate::{
     {QuoteStyle, Terminator},
 };
 
+const DEFAULT_BUFFER_CAPACITY: usize = 8 * (1 << 10);
+
 /// Builds a CSV writer with various configuration knobs.
 ///
 /// This builder can be used to tweak the field delimiter, record terminator
 /// and more. Once a CSV `Writer` is built, its configuration cannot be
 /// changed.
+///
+/// The default configuration writes headers unless `has_headers(false)` is
+/// set on the builder.
 #[derive(Debug)]
 pub struct WriterBuilder {
     builder: CoreWriterBuilder,
@@ -32,7 +37,7 @@ impl Default for WriterBuilder {
     fn default() -> WriterBuilder {
         WriterBuilder {
             builder: CoreWriterBuilder::default(),
-            capacity: 8 * (1 << 10),
+            capacity: DEFAULT_BUFFER_CAPACITY,
             flexible: false,
             has_headers: true,
         }

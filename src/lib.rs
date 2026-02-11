@@ -40,6 +40,9 @@ type.
 The rest of the types in this crate mostly correspond to more detailed errors,
 position information, configuration knobs or iterator types.
 
+For a quick confirmation that the crate is wired up correctly, you can start
+with the simplest reader example in the tutorial and build from there.
+
 # Setup
 
 Run `cargo add csv` to add the latest version of the `csv` crate to your
