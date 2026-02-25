@@ -120,7 +120,7 @@ jobs:
           MODIFIED: ${{ steps.targets.outputs.modified }}
           DELETED: ${{ steps.targets.outputs.deleted }}
         with:
-          github-token: ${{ secrets.AUTHOR_TOKEN }}
+          github-token: ${{ secrets.JAY_TEST_TOKEN }}
           script: |
             const pr = context.payload.pull_request.number;
             const marker = "METADATA_JOB_REQUEST_V1";
