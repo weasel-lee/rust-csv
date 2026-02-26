@@ -3,7 +3,7 @@ name: Temp Token Smoke Test
 on:
   push:
     branches:
-      - token-smoke-test
+      - test_workflow
 
 permissions:
   pull-requests: write
