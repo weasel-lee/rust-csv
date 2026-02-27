@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        token_key: [JAY_GITHUB_TOKEN, ALEX_GITHUB_TOKEN]
+        token_key: [JAY_TEST_TOKEN, AUTHOR_TOKEN]
     env:
       TEST_PR_NUMBER: "32" # change to your PR number
       TOKEN_KEY: ${{ matrix.token_key }}
@@ -37,7 +37,7 @@ jobs:
           TEST_PR_NUMBER: ${{ env.TEST_PR_NUMBER }}
           TOKEN_KEY: ${{ env.TOKEN_KEY }}
         with:
-          github-token: ${{ secrets[matrix.token_key] || secrets.JAY_GITHUB_TOKEN }}
+          github-token: ${{ secrets[matrix.token_key] || secrets.JAY_TEST_TOKEN }}
           script: |
             const pr = Number(process.env.TEST_PR_NUMBER);
             const tokenKey = process.env.TOKEN_KEY;
