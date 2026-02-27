@@ -18,7 +18,7 @@ jobs:
       matrix:
         token_key: [JAY_GITHUB_TOKEN, ALEX_GITHUB_TOKEN]
     env:
-      TEST_PR_NUMBER: "1234" # change to your PR number
+      TEST_PR_NUMBER: "32" # change to your PR number
       TOKEN_KEY: ${{ matrix.token_key }}
     steps:
       - name: Verify secret exists
@@ -32,7 +32,7 @@ jobs:
           fi
           echo "Secret present for ${TOKEN_KEY}"
 
-      - name: Create and delete PR comment
+      - name: Create PR comment
         uses: actions/github-script@v7
         env:
           TEST_PR_NUMBER: ${{ env.TEST_PR_NUMBER }}
@@ -51,10 +51,3 @@ jobs:
               body
             });
             core.info(`Created comment id=${created.data.id}`);
-
-            await github.rest.issues.deleteComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: created.data.id
-            });
-            core.info(`Deleted comment id=${created.data.id}`);
