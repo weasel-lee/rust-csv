@@ -1,9 +1,14 @@
-You are running a weekly, automated Rust bug-finding sweep.
+You are running an automated Rust bug-finding sweep for one assigned batch.
+
+## Required first line in your reply
+- The task comment provides a required result marker.
+- Your first line must be that marker exactly, for example:
+  `<!-- CODEX_SWEEP_RESULT week=2026-W10 batch=root__01 -->`
 
 ## Scope
-- Review the repository, but focus on **allowlisted, tracked Rust files (`*.rs`)** listed in the **Batch manifest** below.
+- Review the repository, but focus on allowlisted, tracked Rust files (`*.rs`) listed in the Assigned batch manifest below.
 - The manifest is a context-control/routing aid. If you need nearby context (modules, types, config, traits), inspect it.
-- Use the repository contents as the source of truth; the batch manifest is only a routing aid for batching.
+- Use the repository contents as the source of truth; the manifest is only a routing aid.
 
 ## What to find (high signal only)
 Prioritize likely, actionable issues with concrete failure modes:
@@ -21,16 +26,16 @@ Prioritize likely, actionable issues with concrete failure modes:
 - Do not open PRs or modify code
 
 ## Execution rules
-- Work through **all batches** in the manifest before writing your final answer.
-- Treat batch boundaries as hints, not hard walls.
+- Work through all files listed in the Assigned batch manifest before writing your final answer.
+- Treat manifest boundaries as hints, not hard walls.
 - Prefer fewer findings with higher confidence over many speculative items.
 
-## Output (single consolidated reply)
-Reply with **one consolidated final report comment** that includes:
+## Output (single reply for this batch)
+Reply with one report comment that includes:
 
 1) Summary: 3–8 bullets
 
-2) Findings grouped by severity: P0 / P1 / P2  
+2) Findings grouped by severity: P0 / P1 / P2
 For each finding include:
 - severity: P0/P1/P2
 - file: path
@@ -40,5 +45,5 @@ For each finding include:
 - optional: how to test/repro (short)
 
 3) Coverage
-- List all batches reviewed (crate + batch id), and any important skips.
+- State the assigned batch key and confirm all listed files were reviewed (or list important skips).
 - If you find no credible bugs, say so, and still include Coverage.
