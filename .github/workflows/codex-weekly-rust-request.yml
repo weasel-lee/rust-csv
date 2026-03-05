@@ -119,10 +119,9 @@ jobs:
             cur_bytes = 0
             idx = 1
 
-            def flush():
-              nonlocal cur, cur_bytes, idx
+            def flush(cur, cur_bytes, idx):
               if not cur:
-                return
+                return cur, cur_bytes, idx
               crate_batches.append({
                 "key": f"{crate}__{idx:02d}",
                 "crate": crate,
@@ -131,15 +130,13 @@ jobs:
                 "bytes": cur_bytes,
                 "oversize": False,
               })
-              idx += 1
-              cur = []
-              cur_bytes = 0
+              return [], 0, idx + 1
 
             for rel, sz in crate_files:
               # oversize: keep as single-file batch
               if sz > max_bytes:
                 if cur:
-                  flush()
+                  cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
                 crate_batches.append({
                   "key": f"{crate}__{idx:02d}",
                   "crate": crate,
@@ -152,12 +149,12 @@ jobs:
                 continue
 
               if cur and (len(cur) >= max_files or (cur_bytes + sz) > max_bytes):
-                flush()
+                cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
 
               cur.append((rel, sz))
               cur_bytes += sz
 
-            flush()
+            cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
 
             total = len(crate_batches)
             for b in crate_batches:
