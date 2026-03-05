@@ -221,10 +221,10 @@ jobs:
           Path("codex-comment.md").write_text("\n".join(out) + "\n", encoding="utf-8")
           PY
 
-      - name: Post weekly @codex comment (JAY_GITHUB_TOKEN)
+      - name: Post weekly @codex comment (AUTHOR_TOKEN)
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.JAY_GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const fs = require("fs");
 
