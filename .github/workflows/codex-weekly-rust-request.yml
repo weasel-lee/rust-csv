@@ -18,7 +18,7 @@ permissions:
 
 env:
   ISSUE_NUMBER: ${{ vars.CODEX_WEEKLY_ISSUE_NUMBER }}
-  MAX_FILES_PER_BATCH: ${{ vars.CODEX_MAX_FILES_PER_BATCH }} # optional; defaults to 12 if empty
+  MAX_FILES_PER_BATCH: ${{ vars.CODEX_MAX_FILES_PER_BATCH }} # optional; defaults to 15 if empty
   MAX_BYTES_PER_BATCH: ${{ vars.CODEX_MAX_BYTES_PER_BATCH }} # optional; defaults to 150000 if empty
 
 jobs:
@@ -33,11 +33,14 @@ jobs:
       - name: Compute weekly key
         run: echo "WEEK_KEY=$(date -u +%G-W%V)" >> "$GITHUB_ENV"
 
-      - name: Build @codex issue comment (static prompt + dynamic manifest)
+      - name: Build batches.json (allowlist + crate + byte batches)
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .codex
+
           python <<'PY'
+          import json
           import math
           import os
           import subprocess
@@ -48,19 +51,19 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
           week_key = os.environ["WEEK_KEY"]
 
-          max_files = int(os.getenv("MAX_FILES_PER_BATCH") or 12)
+          max_files = int(os.getenv("MAX_FILES_PER_BATCH") or 15)
           max_bytes = int(os.getenv("MAX_BYTES_PER_BATCH") or 150_000)
-          allowlist_path = (".github/metadata/allowlist.txt").strip()
 
-          prompt_path = Path(".github/codex/prompts/weekly-rust-bug-scan.md")
+          allowlist_path = ".github/metadata/allowlist.txt"
+          prompt_path = Path(".github/bug_sweep/rust-bug-sweep.txt")
           if not prompt_path.exists():
-            raise SystemExit("Missing .github/codex/prompts/weekly-rust-bug-scan.md")
+            raise SystemExit("Missing .github/bug_sweep/rust-bug-sweep.txt")
           static_prompt = prompt_path.read_text(encoding="utf-8").strip()
 
           def git_lines(*args):
             return subprocess.check_output(["git", *args], text=True).splitlines()
 
-          # --- Load allowlist patterns (your include + !exclude format) ---
+          # allowlist parsing
           allow_file = Path(allowlist_path)
           lines = []
           if allow_file.exists():
@@ -73,29 +76,15 @@ jobs:
           includes = [x for x in lines if not x.startswith("!")]
           excludes = [x[1:] for x in lines if x.startswith("!")]
 
-          # Handle mismatch: patterns start with "trading/" but repo root doesn't have that folder.
-          strip_trading_prefix = False
-          if not Path("trading").is_dir() and any(p.startswith("trading/") for p in includes + excludes):
-            strip_trading_prefix = True
-
-          def normalize_pat(p: str) -> str:
-            if strip_trading_prefix and p.startswith("trading/"):
-              return p[len("trading/"):]
-            return p
-
-          includes = [normalize_pat(p) for p in includes]
-          excludes = [normalize_pat(p) for p in excludes]
-
-          # --- Collect tracked .rs and apply allowlist ---
-          tracked = git_lines("ls-files")
-          rust = [p for p in tracked if p.endswith(".rs")]
-
           def allowed(p: str) -> bool:
             if includes and not any(fnmatch.fnmatch(p, pat) for pat in includes):
               return False
             if excludes and any(fnmatch.fnmatch(p, pat) for pat in excludes):
               return False
             return True
+
+          tracked = git_lines("ls-files")
+          rust = [p for p in tracked if p.endswith(".rs")]
 
           files = []
           for rel in rust:
@@ -105,24 +94,7 @@ jobs:
             if fp.is_file():
               files.append((rel, fp.stat().st_size))
 
-          marker = f"<!-- codex-weekly-rust-bug-scan:{week_key} -->"
-          out = []
-          out.append(marker)
-          out.append("@codex Run the weekly Rust bug sweep for this repository.")
-          out.append("")
-          out.append(f"Repository: `{repo}`")
-          out.append("")
-
-          # If nothing matched, still trigger with an acknowledgement.
-          if not files:
-            out.append(static_prompt)
-            out.append("")
-            out.append("## Batch manifest")
-            out.append("_No Rust files matched the allowlist._")
-            Path("codex-comment.md").write_text("\n".join(out) + "\n", encoding="utf-8")
-            raise SystemExit(0)
-
-          # --- Find crate roots by Cargo.toml and map file to nearest crate ---
+          # crate mapping
           cargo_tomls = git_lines("ls-files", ":(glob)**/Cargo.toml")
           crate_roots = sorted({str(Path(p).parent) for p in cargo_tomls}, key=len, reverse=True)
 
@@ -138,7 +110,6 @@ jobs:
           for rel, sz in sorted(files, key=lambda x: x[0]):
             by_crate[crate_for(rel)].append((rel, sz))
 
-          # --- Batch pack by bytes (and file-count cap) per crate ---
           batches = []
           for crate in sorted(by_crate.keys()):
             crate_files = by_crate[crate]
@@ -148,9 +119,10 @@ jobs:
             cur_bytes = 0
             idx = 1
 
-            def flush(cur, cur_bytes, idx):
+            def flush():
+              nonlocal cur, cur_bytes, idx
               if not cur:
-                return cur, cur_bytes, idx
+                return
               crate_batches.append({
                 "key": f"{crate}__{idx:02d}",
                 "crate": crate,
@@ -159,13 +131,15 @@ jobs:
                 "bytes": cur_bytes,
                 "oversize": False,
               })
-              return [], 0, idx + 1
+              idx += 1
+              cur = []
+              cur_bytes = 0
 
             for rel, sz in crate_files:
-              # Explicit oversize handling: keep it in its own single-file batch.
+              # oversize: keep as single-file batch
               if sz > max_bytes:
                 if cur:
-                  cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
+                  flush()
                 crate_batches.append({
                   "key": f"{crate}__{idx:02d}",
                   "crate": crate,
@@ -178,81 +152,179 @@ jobs:
                 continue
 
               if cur and (len(cur) >= max_files or (cur_bytes + sz) > max_bytes):
-                cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
+                flush()
 
               cur.append((rel, sz))
               cur_bytes += sz
 
-            cur, cur_bytes, idx = flush(cur, cur_bytes, idx)
+            flush()
 
             total = len(crate_batches)
             for b in crate_batches:
               b["total"] = total
             batches.extend(crate_batches)
 
-          # --- Compose final comment: static prompt + dynamic manifest ---
-          out.append(static_prompt)
-          out.append("")
-          out.append("## Sweep parameters")
-          out.append(f"- Allowlist file: `{allow_file.as_posix() if allow_file.exists() else allowlist_path}`")
-          out.append(f"- Rust files in scope: **{len(files)}**")
-          out.append(f"- Max files per batch: **{max_files}**")
-          out.append(f"- Max bytes per batch: **{max_bytes}** (oversize files are single-file batches)")
-          out.append("")
-          out.append("## Batch manifest (grouped by crate)")
+          out = {
+            "repo": repo,
+            "week_key": week_key,
+            "allowlist_path": allowlist_path,
+            "max_files": max_files,
+            "max_bytes": max_bytes,
+            "rust_files_total": len(files),
+            "batches_total": len(batches),
+            "batches": batches,
+          }
 
-          for crate in sorted(by_crate.keys()):
-            crate_batches = [b for b in batches if b["crate"] == crate]
-            for b in crate_batches:
-              kib = math.ceil(b["bytes"] / 1024)
-              flag = " — OVERSIZE" if b["oversize"] else ""
-              out.append(f"<details><summary>Crate `{crate}` — Batch {b['index']:02d}/{b['total']:02d} — {len(b['files'])} files — ~{kib} KiB{flag}</summary>")
-              out.append("")
-              out.append("```text")
-              for rel, sz in b["files"]:
-                out.append(f"{rel} ({sz} bytes)")
-              out.append("```")
-              out.append("")
-              out.append("</details>")
-
-          Path("codex-comment.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+          Path(".codex/batches.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+          Path(".codex/static_prompt.txt").write_text(static_prompt + "\n", encoding="utf-8")
           PY
 
-      - name: Post weekly @codex comment (AUTHOR_TOKEN)
+      - name: Create or refresh aggregate comment (single “collector” comment)
         uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
+          WEEK_KEY: ${{ env.WEEK_KEY }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require("fs");
+
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            if (!issueNumber) throw new Error("Set CODEX_WEEKLY_BUG_SWEEP_ISSUE_NUMBER.");
+
+            const data = JSON.parse(fs.readFileSync(".codex/batches.json", "utf8"));
+            const weekKey = data.week_key;
+            const marker = `<!-- CODEX_SWEEP_AGG week=${weekKey} -->`;
+
+            const batches = data.batches || [];
+            const total = batches.length;
+
+            // group by crate
+            const byCrate = new Map();
+            for (const b of batches) {
+              if (!byCrate.has(b.crate)) byCrate.set(b.crate, []);
+              byCrate.get(b.crate).push(b);
+            }
+            for (const [k, v] of byCrate.entries()) v.sort((a,b) => a.index - b.index);
+
+            const bodyLines = [];
+            bodyLines.push(marker);
+            bodyLines.push(`## Weekly Codex Rust bug sweep (${weekKey})`);
+            bodyLines.push(`Progress: **0/${total}**`);
+            bodyLines.push("");
+            bodyLines.push("This comment is updated in-place as Codex finishes each batch.");
+            bodyLines.push("");
+            bodyLines.push("### Sweep parameters");
+            bodyLines.push(`- Allowlist: \`${data.allowlist_path}\``);
+            bodyLines.push(`- Rust files in scope: **${data.rust_files_total}**`);
+            bodyLines.push(`- Max files per batch: **${data.max_files}**`);
+            bodyLines.push(`- Max bytes per batch: **${data.max_bytes}** (oversize => single-file batch)`);
+            bodyLines.push("");
+
+            if (total === 0) {
+              bodyLines.push("_No Rust files matched the allowlist._");
+            } else {
+              for (const crate of Array.from(byCrate.keys()).sort()) {
+                bodyLines.push(`### Crate: \`${crate}\``);
+                for (const b of byCrate.get(crate)) {
+                  const kib = Math.ceil((b.bytes || 0) / 1024);
+                  const flag = b.oversize ? " — OVERSIZE" : "";
+                  bodyLines.push(`#### Batch \`${b.key}\` (${b.files.length} files, ~${kib} KiB${flag})`);
+                  bodyLines.push(`<!-- BEGIN batch=${b.key} -->`);
+                  bodyLines.push("_(pending)_");
+                  bodyLines.push(`<!-- END batch=${b.key} -->`);
+                  bodyLines.push("");
+                }
+              }
+            }
+
+            const body = bodyLines.join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c => (c.body || "").includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            }
+
+      - name: Post @codex batch request comments (one per batch)
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
         with:
           github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const fs = require("fs");
 
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-            if (!issueNumber) throw new Error("Set repo variable CODEX_WEEKLY_ISSUE_NUMBER.");
+            if (!issueNumber) throw new Error("Set CODEX_WEEKLY_BUG_SWEEP_ISSUE_NUMBER.");
 
-            const marker = `<!-- codex-weekly-rust-bug-scan:${process.env.WEEK_KEY} -->`;
+            const data = JSON.parse(fs.readFileSync(".codex/batches.json", "utf8"));
+            const staticPrompt = fs.readFileSync(".codex/static_prompt.txt", "utf8").trim();
 
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                per_page: 100,
-              }
-            );
+            const weekKey = data.week_key;
+            const batches = data.batches || [];
+            if (batches.length === 0) return;
 
-            if (comments.some(c => (c.body || "").includes(marker))) {
-              console.log(`Trigger comment already exists for ${process.env.WEEK_KEY}.`);
-              return;
-            }
-
-            const body = fs.readFileSync("codex-comment.md", "utf8");
-
-            await github.rest.issues.createComment({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              body,
+              per_page: 100,
             });
-        env:
-          ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
-          WEEK_KEY: ${{ env.WEEK_KEY }}
+
+            const bodies = comments.map(c => c.body || "");
+            const hasMarker = (m) => bodies.some(b => b.includes(m));
+
+            for (const b of batches) {
+              const reqMarker = `<!-- CODEX_SWEEP_REQUEST week=${weekKey} batch=${b.key} -->`;
+              if (hasMarker(reqMarker)) continue;
+
+              const resultMarker = `<!-- CODEX_SWEEP_RESULT week=${weekKey} batch=${b.key} -->`;
+
+              // Keep responses concise so the aggregate comment doesn't exceed GitHub limits.
+              // (GitHub API commonly errors around 65k chars per comment.) :contentReference[oaicite:5]{index=5}
+              const body = [
+                "@codex",
+                reqMarker,
+                "",
+                `Weekly Rust bug sweep — week: \`${weekKey}\``,
+                `Crate: \`${b.crate}\` | Batch: ${b.index}/${b.total} | Key: \`${b.key}\``,
+                "",
+                "Reply requirements:",
+                `1) First line must be exactly: ${resultMarker}`,
+                "2) Do NOT include `@codex` in your reply.",
+                "3) Keep your reply concise (target <= ~6,000 characters). If more, include top findings and say “truncated; see full analysis in this comment thread.”",
+                "",
+                "---",
+                "",
+                staticPrompt,
+                "",
+                "## Batch manifest",
+                ...b.files.map(([p, sz]) => `- \`${p}\` (${sz} bytes)`),
+              ].join("\n");
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            }
