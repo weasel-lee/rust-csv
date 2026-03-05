@@ -1,0 +1,52 @@
+name: Temp Token Smoke Test
+
+on:
+  push:
+    branches:
+      - test_workflow2
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        token_key: [JAY_TEST_TOKEN, AUTHOR_TOKEN]
+    env:
+      TEST_PR_NUMBER: "32" # change to your PR number
+      TOKEN_KEY: ${{ matrix.token_key }}
+    steps:
+      - name: Verify secret exists
+        env:
+          SELECTED_TOKEN: ${{ secrets[matrix.token_key] }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SELECTED_TOKEN}" ]; then
+            echo "::error::Missing or empty secret: ${TOKEN_KEY}"
+            exit 1
+          fi
+          echo "Secret present for ${TOKEN_KEY}"
+
+      - name: Create PR comment
+        uses: actions/github-script@v7
+        env:
+          TEST_PR_NUMBER: ${{ env.TEST_PR_NUMBER }}
+          TOKEN_KEY: ${{ env.TOKEN_KEY }}
+        with:
+          github-token: ${{ secrets[matrix.token_key] || secrets.JAY_TEST_TOKEN }}
+          script: |
+            const pr = Number(process.env.TEST_PR_NUMBER);
+            const tokenKey = process.env.TOKEN_KEY;
+            const body = `Temp token smoke test (${tokenKey})`;
+
+            const created = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body
+            });
+            core.info(`Created comment id=${created.data.id}`);
