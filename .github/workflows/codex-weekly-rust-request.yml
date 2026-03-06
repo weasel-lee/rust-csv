@@ -343,7 +343,7 @@ jobs:
             }
 
             const missingTasks = tasks.filter(task => !existingTaskBatches.has(task.batch_key));
-            # Time gap for codex to recognize each task
+            // Time gap for codex to recognize each task
             const interTaskDelayMs = 10_000;
 
             for (const [index, task] of missingTasks.entries()) {
