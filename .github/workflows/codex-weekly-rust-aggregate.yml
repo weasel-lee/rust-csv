@@ -33,21 +33,27 @@ jobs:
 
             const normalizeBody = body => (body || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
             const firstLine = body => normalizeBody(body).split("\n", 1)[0] || "";
+            const firstTaskMarkerLine = body => {
+              const lines = normalizeBody(body).split("\n");
+              const first = (lines[0] || "").trim();
+              if (first === "@codex") {
+                return (lines[1] || "").trim();
+              }
+              return first;
+            };
             const startsWithMarker = (body, marker) => {
               const normalized = normalizeBody(body);
               return normalized === marker || normalized.startsWith(`${marker}\n`);
             };
             const markerInfo = body => {
-              const line = firstLine(body);
-
-              let match = line.match(
+              let match = firstTaskMarkerLine(body).match(
                 /^<!--\s*CODEX_SWEEP_TASK\s+week=([0-9]{4}-W[0-9]{2})\s+batch=([^\s>]+)\s*-->$/i
               );
               if (match) {
                 return { kind: "task", weekKey: match[1], batchKey: match[2] };
               }
 
-              match = line.match(
+              match = firstLine(body).match(
                 /^<!--\s*CODEX_SWEEP_RESULT\s+week=([0-9]{4}-W[0-9]{2})\s+batch=([^\s>]+)\s*-->$/i
               );
               if (match) {

@@ -242,8 +242,8 @@ jobs:
           tasks = []
           for batch in selected_batches:
             task_lines = []
-            task_lines.append(f"<!-- CODEX_SWEEP_TASK week={week_key} batch={batch['key']} -->")
             task_lines.append("@codex")
+            task_lines.append(f"<!-- CODEX_SWEEP_TASK week={week_key} batch={batch['key']} -->")
             task_lines.append("")
             task_lines.append("Run the Rust bug sweep for the assigned batch.")
             task_lines.append("")
@@ -301,7 +301,14 @@ jobs:
               const normalized = normalizeBody(body);
               return normalized === marker || normalized.startsWith(`${marker}\n`);
             };
-            const firstLine = body => normalizeBody(body).split("\n", 1)[0] || "";
+            const firstTaskMarkerLine = body => {
+              const lines = normalizeBody(body).split("\n");
+              const first = (lines[0] || "").trim();
+              if (first === "@codex") {
+                return (lines[1] || "").trim();
+              }
+              return first;
+            };
             const taskMarkerRegex =
               /^<!--\s*CODEX_SWEEP_TASK\s+week=([0-9]{4}-W[0-9]{2})\s+batch=([^\s>]+)\s*-->$/i;
 
@@ -321,7 +328,7 @@ jobs:
             const existingTaskBatches = new Set(
               comments
                 .map(comment => {
-                  const match = firstLine(comment.body).match(taskMarkerRegex);
+                  const match = firstTaskMarkerLine(comment.body).match(taskMarkerRegex);
                   if (!match || match[1] !== weekKey) {
                     return null;
                   }
