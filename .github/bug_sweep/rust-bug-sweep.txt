@@ -1,4 +1,7 @@
 You are running an automated Rust bug-finding sweep for one assigned batch.
+Reply with a NEW ISSUE COMMENT BODY ONLY.
+Do NOT create or modify any files.
+Do NOT run git add/commit.
 
 ## Required first line in your reply
 - The task comment provides a required result marker.
