@@ -64,6 +64,20 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function findEyesReaction({ github, context, commentId }) {
+  const reactions = await github.paginate(
+    github.rest.reactions.listForIssueComment,
+    {
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      comment_id: commentId,
+      per_page: 100,
+    }
+  );
+
+  return reactions.find(reaction => reaction.content === "eyes") || null;
+}
+
 async function waitForEyesReaction({
   github,
   context,
@@ -75,17 +89,7 @@ async function waitForEyesReaction({
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const reactions = await github.paginate(
-      github.rest.reactions.listForIssueComment,
-      {
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        comment_id: commentId,
-        per_page: 100,
-      }
-    );
-
-    const eyesReaction = reactions.find(reaction => reaction.content === "eyes");
+    const eyesReaction = await findEyesReaction({ github, context, commentId });
     if (eyesReaction) {
       const reactor =
         eyesReaction.user && eyesReaction.user.login ? ` by @${eyesReaction.user.login}` : "";
@@ -108,6 +112,7 @@ module.exports = {
   RESULT_MARKER_REGEX,
   TASK_MARKER_REGEX,
   commentLogin,
+  findEyesReaction,
   firstLine,
   isTrustedCommenter,
   markerInfo,

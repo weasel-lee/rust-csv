@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const {
+  findEyesReaction,
   isTrustedCommenter,
   markerInfo,
   parseTaskMarker,
@@ -43,17 +44,27 @@ async function run({ github, context, core }) {
     comment => isTrustedCommenter(comment) && startsWithMarker(comment.body, overviewMarker)
   );
   const trustedComments = comments.filter(comment => isTrustedCommenter(comment));
-  let existingTaskBatches = new Set(
-    trustedComments
-      .map(comment => {
-        const marker = parseTaskMarker(comment.body);
-        if (!marker || marker.weekKey !== weekKey) {
-          return null;
-        }
-        return marker.batchKey;
-      })
-      .filter(Boolean)
-  );
+  const sameWeekTaskComments = trustedComments
+    .map(comment => {
+      const marker = parseTaskMarker(comment.body);
+      return { comment, marker };
+    })
+    .filter(({ marker }) => marker && marker.weekKey === weekKey);
+  let existingTaskBatches = new Set();
+  const staleUnacknowledgedTaskComments = [];
+
+  for (const { comment, marker } of sameWeekTaskComments) {
+    const eyesReaction = await findEyesReaction({
+      github,
+      context,
+      commentId: comment.id,
+    });
+    if (eyesReaction) {
+      existingTaskBatches.add(marker.batchKey);
+    } else {
+      staleUnacknowledgedTaskComments.push(comment);
+    }
+  }
 
   if (!overviewComment) {
     await github.rest.issues.createComment({
@@ -92,6 +103,21 @@ async function run({ github, context, core }) {
         }
       }
       existingTaskBatches = new Set();
+    } else if (staleUnacknowledgedTaskComments.length > 0) {
+      core.info(
+        `Removing ${staleUnacknowledgedTaskComments.length} unacknowledged task comment(s) for ${weekKey}.`
+      );
+      for (const comment of staleUnacknowledgedTaskComments) {
+        try {
+          await github.rest.issues.deleteComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: comment.id,
+          });
+        } catch (error) {
+          core.warning(`Failed to delete stale task comment ${comment.id}: ${error.message}`);
+        }
+      }
     }
   }
 
