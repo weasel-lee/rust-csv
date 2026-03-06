@@ -245,7 +245,7 @@ jobs:
             task_lines.append(f"<!-- CODEX_SWEEP_TASK week={week_key} batch={batch['key']} -->")
             task_lines.append("@codex")
             task_lines.append("")
-            task_lines.append("Run the Rust bug sweep for the assigned batch only.")
+            task_lines.append("Run the Rust bug sweep for the assigned batch.")
             task_lines.append("")
             task_lines.append("Reply in a new issue comment.")
             task_lines.append("The first line of your reply must be exactly:")
@@ -343,14 +343,21 @@ jobs:
             }
 
             const missingTasks = tasks.filter(task => !existingTaskBatches.has(task.batch_key));
+            # Time gap for codex to recognize each task
+            const interTaskDelayMs = 10_000;
 
-            for (const task of missingTasks) {
+            for (const [index, task] of missingTasks.entries()) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body: task.body,
               });
+
+              if (index < missingTasks.length - 1) {
+                core.info(`Waiting ${interTaskDelayMs}ms before posting the next @codex task comment.`);
+                await new Promise(resolve => setTimeout(resolve, interTaskDelayMs));
+              }
             }
 
             if (missingTasks.length === 0) {
