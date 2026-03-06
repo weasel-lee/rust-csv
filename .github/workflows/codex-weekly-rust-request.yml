@@ -32,7 +32,7 @@ jobs:
 
       - name: Build weekly sweep overview/task comments
         shell: bash
-        run: python .github/bug-sweep/scripts/build_weekly_codex_bug_sweep.py
+        run: python .github/bug_sweep/scripts/build_weekly_codex_bug_sweep.py
 
       - name: Post weekly sweep comments
         uses: actions/github-script@v7
@@ -41,7 +41,7 @@ jobs:
           script: |
             const path = require("path");
             const { run } = require(
-              path.join(process.env.GITHUB_WORKSPACE, ".github/bug-sweep/scripts/post_weekly_codex_bug_sweep_comments.js")
+              path.join(process.env.GITHUB_WORKSPACE, ".github/bug_sweep/scripts/post_weekly_codex_bug_sweep_comments.js")
             );
             await run({ github, context, core });
         env:

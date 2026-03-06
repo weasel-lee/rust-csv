@@ -33,7 +33,7 @@ jobs:
           script: |
             const path = require("path");
             const { run } = require(
-              path.join(process.env.GITHUB_WORKSPACE, ".github/bug-sweep/scripts/collect_weekly_codex_bug_sweep_results.js")
+              path.join(process.env.GITHUB_WORKSPACE, ".github/bug_sweep/scripts/collect_weekly_codex_bug_sweep_results.js")
             );
             await run({ github, context, core });
         env:
