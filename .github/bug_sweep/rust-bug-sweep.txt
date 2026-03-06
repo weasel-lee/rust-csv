@@ -1,12 +1,5 @@
 You are running an automated Rust bug-finding sweep for one assigned batch.
 Reply with a NEW ISSUE COMMENT BODY ONLY.
-Do NOT create or modify any files.
-Do NOT run git add/commit.
-
-## Required first line in your reply
-- The task comment provides a required result marker.
-- Your first line must be that marker exactly, for example:
-  `<!-- CODEX_SWEEP_RESULT week=2026-W10 batch=root__01 -->`
 
 ## Scope
 - Review the repository, but focus on allowlisted, tracked Rust files (`*.rs`) listed in the Assigned batch manifest below.
@@ -27,6 +20,7 @@ Prioritize likely, actionable issues with concrete failure modes:
 - Do not give style-only feedback (formatting, naming, “prefer X”)
 - Do not refactor for aesthetics
 - Do not open PRs or modify code
+- Do not create or modify any files.
 
 ## Execution rules
 - Work through all files listed in the Assigned batch manifest before writing your final answer.
