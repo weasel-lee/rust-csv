@@ -24,7 +24,7 @@ jobs:
       - name: Collect Codex batch result and update aggregate state
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.JAY_GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTHOR_TOKEN }}
           script: |
             const issueNumber = Number(process.env.ISSUE_NUMBER || "0");
             if (!issueNumber) {
