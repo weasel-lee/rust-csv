@@ -56,7 +56,9 @@ async function run({ github, context, core }) {
   );
 
   const overviewMarker = `<!-- CODEX_SWEEP_AGG week=${weekKey} -->`;
-  const overviewComment = comments.find(comment => startsWithMarker(comment.body, overviewMarker));
+  const overviewComment = comments.find(
+    comment => isTrustedCommenter(comment) && startsWithMarker(comment.body, overviewMarker)
+  );
   if (!overviewComment) {
     core.warning(`No overview comment found for ${weekKey}; skipping.`);
     return;

@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const {
+  isTrustedCommenter,
   parseTaskMarker,
   startsWithMarker,
   waitForEyesReaction,
@@ -31,9 +32,12 @@ async function run({ github, context, core }) {
 
   const overviewBody = fs.readFileSync("codex-overview-comment.md", "utf8");
   const tasks = JSON.parse(fs.readFileSync("codex-task-comments.json", "utf8"));
-  const overviewComment = comments.find(comment => startsWithMarker(comment.body, overviewMarker));
+  const overviewComment = comments.find(
+    comment => isTrustedCommenter(comment) && startsWithMarker(comment.body, overviewMarker)
+  );
   const existingTaskBatches = new Set(
     comments
+      .filter(comment => isTrustedCommenter(comment))
       .map(comment => {
         const marker = parseTaskMarker(comment.body);
         if (!marker || marker.weekKey !== weekKey) {
