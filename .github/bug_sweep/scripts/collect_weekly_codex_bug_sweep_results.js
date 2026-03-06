@@ -1,12 +1,15 @@
 "use strict";
 
 const {
+  batchBlocks,
   commentLogin,
+  deleteCommentsBestEffort,
+  findTrustedOverviewComment,
   firstLine,
   isTrustedCommenter,
+  listIssueComments,
   markerInfo,
   parseResultMarker,
-  startsWithMarker,
 } = require("./codex_weekly_bug_sweep_common");
 
 function escapeRegExp(value) {
@@ -45,20 +48,8 @@ async function run({ github, context, core }) {
   const weekKey = resultMarker.weekKey;
   const batchKey = resultMarker.batchKey;
 
-  const comments = await github.paginate(
-    github.rest.issues.listComments,
-    {
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: currentIssueNumber,
-      per_page: 100,
-    }
-  );
-
-  const overviewMarker = `<!-- CODEX_SWEEP_AGG week=${weekKey} -->`;
-  const overviewComment = comments.find(
-    comment => isTrustedCommenter(comment) && startsWithMarker(comment.body, overviewMarker)
-  );
+  const comments = await listIssueComments({ github, context, issueNumber: currentIssueNumber });
+  const overviewComment = findTrustedOverviewComment(comments, weekKey);
   if (!overviewComment) {
     core.warning(`No overview comment found for ${weekKey}; skipping.`);
     return;
@@ -88,10 +79,9 @@ async function run({ github, context, core }) {
     `${beginMarker}\n${statusLine}\n\n${normalizedPayload}\n${endMarker}`
   );
 
-  const blockRegex = /<!-- BEGIN batch=([^\s>]+) -->([\s\S]*?)<!-- END batch=\1 -->/g;
-  const blocks = [...overviewBody.matchAll(blockRegex)];
+  const blocks = batchBlocks(overviewBody);
   const totalBatches = blocks.length;
-  const completedBatches = blocks.filter(([, , body]) => body.includes("_updated: ")).length;
+  const completedBatches = blocks.filter(block => block.blockBody.includes("_updated: ")).length;
 
   const progressLine = `Progress: **${completedBatches}/${totalBatches}**`;
   if (/Progress:\s*\*\*\d+\/\d+\*\*/.test(overviewBody)) {
@@ -112,15 +102,7 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const refreshedComments = await github.paginate(
-    github.rest.issues.listComments,
-    {
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: currentIssueNumber,
-      per_page: 100,
-    }
-  );
+  const refreshedComments = await listIssueComments({ github, context, issueNumber: currentIssueNumber });
 
   const cleanupTargets = refreshedComments.filter(comment => {
     const marker = markerInfo(comment.body);
@@ -135,17 +117,7 @@ async function run({ github, context, core }) {
     return isTrustedCommenter(comment);
   });
 
-  for (const comment of cleanupTargets) {
-    try {
-      await github.rest.issues.deleteComment({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        comment_id: comment.id,
-      });
-    } catch (error) {
-      core.warning(`Failed to delete comment ${comment.id}: ${error.message}`);
-    }
-  }
+  await deleteCommentsBestEffort({ github, context, core, comments: cleanupTargets });
 
   core.info(`All batches complete for ${weekKey}. Cleaned ${cleanupTargets.length} intermediate comments.`);
 }

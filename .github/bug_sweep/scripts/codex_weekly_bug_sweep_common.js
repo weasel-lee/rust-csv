@@ -5,6 +5,7 @@ const TASK_MARKER_REGEX =
   /^<!--\s*CODEX_SWEEP_TASK\s+week=([0-9]{4}-W[0-9]{2})\s+batch=([^\s>]+)\s*-->$/i;
 const RESULT_MARKER_REGEX =
   /^<!--\s*CODEX_SWEEP_RESULT\s+week=([0-9]{4}-W[0-9]{2})\s+batch=([^\s>]+)\s*-->$/i;
+const BATCH_BLOCK_REGEX = /<!-- BEGIN batch=([^\s>]+) -->([\s\S]*?)<!-- END batch=\1 -->/g;
 
 function normalizeBody(body) {
   return (body || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
@@ -26,6 +27,10 @@ function firstTaskMarkerLine(body) {
 function startsWithMarker(body, marker) {
   const normalized = normalizeBody(body);
   return normalized === marker || normalized.startsWith(`${marker}\n`);
+}
+
+function overviewMarker(weekKey) {
+  return `<!-- CODEX_SWEEP_AGG week=${weekKey} -->`;
 }
 
 function parseTaskMarker(body) {
@@ -60,8 +65,65 @@ function commentLogin(comment) {
   return comment.user && comment.user.login ? comment.user.login : "unknown";
 }
 
+function batchBlocks(body) {
+  return [...normalizeBody(body).matchAll(BATCH_BLOCK_REGEX)].map(([, batchKey, blockBody]) => ({
+    batchKey,
+    blockBody,
+  }));
+}
+
+function completedBatchKeysFromOverview(body) {
+  return new Set(
+    batchBlocks(body)
+      .filter(block => block.blockBody.includes("_updated: "))
+      .map(block => block.batchKey)
+  );
+}
+
+function isOverviewComplete(body) {
+  const blocks = batchBlocks(body);
+  return blocks.length > 0 && blocks.every(block => block.blockBody.includes("_updated: "));
+}
+
+async function listIssueComments({ github, context, issueNumber }) {
+  return github.paginate(
+    github.rest.issues.listComments,
+    {
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: issueNumber,
+      per_page: 100,
+    }
+  );
+}
+
+function findTrustedOverviewComment(comments, weekKey) {
+  const marker = overviewMarker(weekKey);
+  return comments.find(comment => isTrustedCommenter(comment) && startsWithMarker(comment.body, marker));
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function deleteCommentsBestEffort({
+  github,
+  context,
+  core,
+  comments,
+  warningPrefix = "Failed to delete comment",
+}) {
+  for (const comment of comments) {
+    try {
+      await github.rest.issues.deleteComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        comment_id: comment.id,
+      });
+    } catch (error) {
+      core.warning(`${warningPrefix} ${comment.id}: ${error.message}`);
+    }
+  }
 }
 
 async function findEyesReaction({ github, context, commentId }) {
@@ -109,14 +171,22 @@ async function waitForEyesReaction({
 }
 
 module.exports = {
+  BATCH_BLOCK_REGEX,
   RESULT_MARKER_REGEX,
   TASK_MARKER_REGEX,
+  batchBlocks,
   commentLogin,
+  completedBatchKeysFromOverview,
+  deleteCommentsBestEffort,
+  findTrustedOverviewComment,
   findEyesReaction,
   firstLine,
   isTrustedCommenter,
+  isOverviewComplete,
+  listIssueComments,
   markerInfo,
   normalizeBody,
+  overviewMarker,
   parseResultMarker,
   parseTaskMarker,
   startsWithMarker,
