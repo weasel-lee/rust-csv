@@ -343,21 +343,54 @@ jobs:
             }
 
             const missingTasks = tasks.filter(task => !existingTaskBatches.has(task.batch_key));
-            // Time gap for codex to recognize each task
-            const interTaskDelayMs = 10_000;
+            const codexAckPollIntervalMs = 5_000;
+            const codexAckTimeoutMs = 2 * 60_000;
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-            for (const [index, task] of missingTasks.entries()) {
-              await github.rest.issues.createComment({
+            const waitForEyesReaction = async commentId => {
+              const deadline = Date.now() + codexAckTimeoutMs;
+
+              while (Date.now() < deadline) {
+                const reactions = await github.paginate(
+                  github.rest.reactions.listForIssueComment,
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: commentId,
+                    per_page: 100,
+                  }
+                );
+
+                const eyesReaction = reactions.find(reaction => reaction.content === "eyes");
+                if (eyesReaction) {
+                  const reactor = eyesReaction.user && eyesReaction.user.login
+                    ? ` by @${eyesReaction.user.login}`
+                    : "";
+                  core.info(`Observed :eyes: reaction${reactor} on comment ${commentId}.`);
+                  return;
+                }
+
+                core.info(
+                  `No :eyes: reaction yet on comment ${commentId}; polling again in ${codexAckPollIntervalMs}ms.`
+                );
+                await sleep(codexAckPollIntervalMs);
+              }
+
+              throw new Error(
+                `Timed out waiting ${codexAckTimeoutMs}ms for an :eyes: reaction on task comment ${commentId}.`
+              );
+            };
+
+            for (const task of missingTasks) {
+              const createdComment = await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body: task.body,
               });
 
-              if (index < missingTasks.length - 1) {
-                core.info(`Waiting ${interTaskDelayMs}ms before posting the next @codex task comment.`);
-                await new Promise(resolve => setTimeout(resolve, interTaskDelayMs));
-              }
+              // Wait until codex recognize the task.
+              await waitForEyesReaction(createdComment.data.id);
             }
 
             if (missingTasks.length === 0) {
